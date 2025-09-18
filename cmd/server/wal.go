@@ -30,7 +30,7 @@ func (w *WAL) writeToWAL(entry *WALEntry) bool {
 	defer file.Close()
 
 	// Write the entry to the file
-	_, err = file.WriteString(fmt.Sprintf("%s %s %s\n", entry.Op, entry.Key, entry.Value))
+	_, err = fmt.Fprintf(file, "%s %s %s\n", entry.Op, entry.Key, entry.Value)
 	if err != nil {
 		logger.Error("Failed to write to WAL file: %v", err)
 		return false
