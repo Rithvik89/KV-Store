@@ -6,7 +6,7 @@ build-cli:
 	go build -o build/cli/$(CLI_NAME) ./cmd/cli/cli.go
 
 build-server:
-	go build -o build/server/$(SERVER_NAME) ./cmd/server/*.go
+	go build -o build/server/$(SERVER_NAME) ./cmd/server/main.go
 
 build-all: build-cli build-server
 

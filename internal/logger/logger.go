@@ -1,7 +1,8 @@
-package main
+package logger
 
 import (
 	"fmt"
+	"os"
 	"time"
 )
 
@@ -61,7 +62,8 @@ func (l *Logger) Error(format string, args ...interface{}) {
 	l.log(ERROR, format, args...)
 }
 
-// Fatal logs a fatal-level message
+// Fatal logs a fatal-level message and exits
 func (l *Logger) Fatal(format string, args ...interface{}) {
 	l.log(FATAL, format, args...)
+	os.Exit(1)
 }
