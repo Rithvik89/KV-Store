@@ -31,8 +31,9 @@ func Help() {
 	fmt.Println("Available Commands:")
 	fmt.Println("1. PUT <key> <value>  - Insert or update a key-value pair")
 	fmt.Println("2. GET <key>          - Retrieve the value for a given key")
-	fmt.Println("3. EXIT               - Exit the application")
-	fmt.Println("4. HELP               - Show this help message")
+	fmt.Println("3. DELETE <key>       - Delete a key-value pair")
+	fmt.Println("4. EXIT               - Exit the application")
+	fmt.Println("5. HELP               - Show this help message")
 }
 
 func InvalidCommand(cmd string) {

@@ -3,8 +3,9 @@ package main
 import "strings"
 
 const (
-	CMD_GET = "GET"
-	CMD_PUT = "PUT"
+	CMD_GET    = "GET"
+	CMD_PUT    = "PUT"
+	CMD_DELETE = "DELETE"
 )
 
 func parseCmd(cmd string) []string {
@@ -17,6 +18,9 @@ func validateCmd(args []string) bool {
 			return true
 		}
 		if args[0] == CMD_PUT && len(args) == 3 {
+			return true
+		}
+		if args[0] == CMD_DELETE && len(args) == 2 {
 			return true
 		}
 	}
