@@ -1,4 +1,4 @@
-module github.com/Rithvik89/memkv
+module memkv
 
 go 1.25.0
 
