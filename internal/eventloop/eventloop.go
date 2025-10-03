@@ -1,13 +1,16 @@
 package eventloop
 
 import (
+	"bytes"
 	"fmt"
+	"io"
+	"log"
 	"net"
-	"strings"
 
 	"memkv/internal/executor"
 	"memkv/internal/logger"
 
+	"github.com/tidwall/resp"
 	"golang.org/x/sys/unix"
 )
 
@@ -155,16 +158,47 @@ func (el *EventLoop) handleNewConnections() error {
 
 // handleClientData reads and processes data from a client
 func (el *EventLoop) handleClientData(fd int) {
+	// Here the data coming in will be in the binay format.
 	buf := make([]byte, 4096)
 	n, err := unix.Read(fd, buf)
 
-	if n > 0 {
-		// Process the command
-		input := strings.TrimSpace(string(buf[:n]))
-		output := el.executor.ProcessCommand(input) + "\n"
+	if err != nil {
+		fmt.Printf("Error in reading")
+	}
 
-		// Write response
-		unix.Write(fd, []byte(output))
+	if n > 0 {
+		// Debug: Print what you actually read, make this debug logger
+		// fmt.Printf("Raw data (string): %q\n", string(buf[:n]))
+
+		rbuf := bytes.NewBuffer(buf[:n])
+		rd := resp.NewReader(rbuf)
+
+		v, _, err := rd.ReadValue()
+
+		if err != nil && err != io.EOF {
+			log.Printf("Error reading RESP value: %v", err)
+			return
+		}
+
+		// Process the command
+		output := el.executor.ProcessKVSPCommand(v)
+
+		buf = make([]byte, 0, 4096)
+		wbuf := bytes.NewBuffer(buf)
+		wb := resp.NewWriter(wbuf)
+
+		err = wb.WriteValue(output)
+		if err != nil {
+			log.Printf("Error writing RESP value: %v", err)
+			return
+		}
+
+		n, err = unix.Write(fd, wbuf.Bytes())
+		if err != nil {
+			log.Printf("Error writing response: %v", err)
+			return
+		}
+
 	}
 
 	// Handle connection close or error
