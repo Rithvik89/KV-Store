@@ -6,102 +6,79 @@ import (
 
 	"memkv/internal/logger"
 	"memkv/internal/storage"
+
+	"github.com/tidwall/resp"
 )
 
-// ProcessCommand processes a command and returns the response
-func (e *Executor) ProcessCommand(input string) string {
-	parts := strings.Fields(input)
-	if len(parts) == 0 {
-		return "ERROR: empty command"
+func (e *Executor) ProcessKVSPCommand(v resp.Value) resp.Value {
+	if v.Type() != resp.Array {
+		return resp.ErrorValue(fmt.Errorf("ERROR: expected array of command and arguments"))
 	}
 
-	cmd := strings.ToUpper(parts[0])
+	command := v.Array()[0].String()
+	command = strings.ToUpper(command)
 
-	switch cmd {
+	switch command {
 	case "SET":
-		return e.handleSet(parts)
+		return e.handleSet(v)
 	case "GET":
-		return e.handleGet(parts)
-	case "DELETE", "DEL":
-		return e.handleDelete(parts)
-	case "EXISTS":
-		return e.handleExists(parts)
-	case "KEYS":
-		return e.handleKeys()
+		return e.handleGet(v)
+	case "DELETE":
+		return e.handleDelete(v)
 	case "PING":
-		return "PONG"
+		return resp.SimpleStringValue("PONG")
 	default:
-		return fmt.Sprintf("ERROR: unknown command '%s'", cmd)
+		return resp.ErrorValue(fmt.Errorf("ERROR: unknown command '%s'", command))
 	}
 }
 
-func (e *Executor) handleSet(parts []string) string {
-	if len(parts) < 3 {
-		return "ERROR: SET requires key and value"
+func (e *Executor) handleSet(v resp.Value) resp.Value {
+	if len(v.Array()) < 3 {
+		return resp.ErrorValue(fmt.Errorf("ERROR: SET requires key and value"))
 	}
 
-	key := parts[1]
-	value := strings.Join(parts[2:], " ")
+	key := v.Array()[1].String()
+	value := v.Array()[2].String()
 
 	if err := e.storage.Set(key, value); err != nil {
 		logger.Error("SET failed: %v", err)
-		return fmt.Sprintf("ERROR: %v", err)
+		return resp.ErrorValue(fmt.Errorf("ERROR: %v", err))
 	}
 
-	return "OK"
+	return resp.SimpleStringValue("OK")
 }
 
-func (e *Executor) handleGet(parts []string) string {
-	if len(parts) < 2 {
-		return "ERROR: GET requires key"
+func (e *Executor) handleGet(v resp.Value) resp.Value {
+	if len(v.Array()) < 2 {
+		return resp.ErrorValue(fmt.Errorf("ERROR: GET requires key"))
 	}
 
-	key := parts[1]
+	key := v.Array()[1].String()
 	value, err := e.storage.Get(key)
 	if err == storage.ErrKeyNotFound {
-		return "(nil)"
+		return resp.NullValue()
 	}
 	if err != nil {
 		logger.Error("GET failed: %v", err)
-		return fmt.Sprintf("ERROR: %v", err)
+		return resp.ErrorValue(fmt.Errorf("ERROR: %v", err))
 	}
 
-	return value
+	return resp.StringValue(value)
 }
 
-func (e *Executor) handleDelete(parts []string) string {
-	if len(parts) < 2 {
-		return "ERROR: DELETE requires key"
+func (e *Executor) handleDelete(v resp.Value) resp.Value {
+	if len(v.Array()) < 2 {
+		return resp.ErrorValue(fmt.Errorf("ERROR: DELETE requires key"))
 	}
 
-	key := parts[1]
+	key := v.Array()[1].String()
 	if err := e.storage.Delete(key); err != nil {
 		if err == storage.ErrKeyNotFound {
-			return "0"
+			return resp.IntegerValue(0)
 		}
 		logger.Error("DELETE failed: %v", err)
-		return fmt.Sprintf("ERROR: %v", err)
+		return resp.ErrorValue(fmt.Errorf("ERROR: %v", err))
 	}
 
-	return "1"
-}
-
-func (e *Executor) handleExists(parts []string) string {
-	if len(parts) < 2 {
-		return "ERROR: EXISTS requires key"
-	}
-
-	key := parts[1]
-	if e.storage.Exists(key) {
-		return "1"
-	}
-	return "0"
-}
-
-func (e *Executor) handleKeys() string {
-	keys := e.storage.Keys()
-	if len(keys) == 0 {
-		return "(empty list)"
-	}
-	return strings.Join(keys, "\n")
+	return resp.IntegerValue(1)
 }
