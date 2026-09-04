@@ -71,6 +71,9 @@ func (e *Executor) registerBuiltins() {
 	e.register(Command{Name: "DEL", MinArgs: 2, MaxArgs: 2, Fn: cmdDel}, "DELETE")
 	e.register(Command{Name: "EXISTS", MinArgs: 2, MaxArgs: 2, Fn: cmdExists})
 	e.register(Command{Name: "KEYS", MinArgs: 1, MaxArgs: 1, Fn: cmdKeys})
+	e.register(Command{Name: "EXPIRE", MinArgs: 3, MaxArgs: 3, Fn: cmdExpire})
+	e.register(Command{Name: "TTL", MinArgs: 2, MaxArgs: 2, Fn: cmdTTL})
+	e.register(Command{Name: "PERSIST", MinArgs: 2, MaxArgs: 2, Fn: cmdPersist})
 }
 
 // Exec looks up args[0] in the dispatch table, checks arity, and runs the handler.

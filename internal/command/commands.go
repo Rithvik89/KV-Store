@@ -1,6 +1,7 @@
 package command
 
 import (
+	"strconv"
 	"strings"
 
 	"memkv/internal/logger"
@@ -66,4 +67,20 @@ func cmdKeys(e *Executor, _ []string) proto.Value {
 		items[i] = proto.Bulk(k)
 	}
 	return proto.Array(items...)
+}
+
+func cmdExpire(e *Executor, args []string) proto.Value {
+	seconds, err := strconv.ParseInt(args[2], 10, 64)
+	if err != nil {
+		return proto.ErrorMsg("ERR value is not an integer or out of range")
+	}
+	return proto.Integer(int64(e.storage.Expire(args[1], seconds)))
+}
+
+func cmdTTL(e *Executor, args []string) proto.Value {
+	return proto.Integer(e.storage.TTL(args[1]))
+}
+
+func cmdPersist(e *Executor, args []string) proto.Value {
+	return proto.Integer(int64(e.storage.Persist(args[1])))
 }

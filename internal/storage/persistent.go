@@ -6,13 +6,14 @@ import (
 	"memkv/internal/wal"
 )
 
-// PersistentStorage is a memory storage with WAL for durability
+// PersistentStorage is the one dict plus a WAL for durability.
+// It does not maintain a second map — all keyspace state lives in dict.
 type PersistentStorage struct {
-	store map[string]string
-	wal   wal.WAL // Now using interface
+	dict *MemoryStorage
+	wal  wal.WAL
 }
 
-// NewPersistentStorage creates a new persistent storage with file-based WAL
+// NewPersistentStorage creates a new persistent storage with file-based WAL.
 func NewPersistentStorage(walPath string) (*PersistentStorage, error) {
 	w, err := wal.NewFileWAL(walPath)
 	if err != nil {
@@ -22,18 +23,17 @@ func NewPersistentStorage(walPath string) (*PersistentStorage, error) {
 	return newPersistentStorageWithWAL(w)
 }
 
-// NewPersistentStorageWithWAL creates storage with a custom WAL implementation
+// NewPersistentStorageWithWAL creates storage with a custom WAL implementation.
 func NewPersistentStorageWithWAL(w wal.WAL) (*PersistentStorage, error) {
 	return newPersistentStorageWithWAL(w)
 }
 
 func newPersistentStorageWithWAL(w wal.WAL) (*PersistentStorage, error) {
 	ps := &PersistentStorage{
-		store: make(map[string]string),
-		wal:   w,
+		dict: NewMemoryStorage(),
+		wal:  w,
 	}
 
-	// Recover from WAL
 	if err := ps.recover(); err != nil {
 		w.Close()
 		return nil, fmt.Errorf("failed to recover from WAL: %w", err)
@@ -42,77 +42,77 @@ func newPersistentStorageWithWAL(w wal.WAL) (*PersistentStorage, error) {
 	return ps, nil
 }
 
-// recover replays the WAL to restore state
+// recover replays the WAL into the shared dict.
 func (ps *PersistentStorage) recover() error {
 	return ps.wal.Replay(func(entry *wal.Entry) error {
 		switch entry.Op {
 		case wal.OpSet:
-			ps.store[entry.Key] = entry.Value
+			return ps.dict.Set(entry.Key, entry.Value)
 		case wal.OpDelete:
-			delete(ps.store, entry.Key)
+			// Ignore missing keys during replay (idempotent).
+			_ = ps.dict.Delete(entry.Key)
+			return nil
 		default:
 			return fmt.Errorf("unknown operation: %s", entry.Op)
 		}
-		return nil
 	})
 }
 
 func (ps *PersistentStorage) Get(key string) (string, error) {
-	value, ok := ps.store[key]
-	if !ok {
-		return "", ErrKeyNotFound
-	}
-	return value, nil
+	return ps.dict.Get(key)
 }
 
 func (ps *PersistentStorage) Set(key string, value string) error {
-	// Write to WAL first (Write-Ahead)
+	// Write to WAL first (Write-Ahead), then update the dict.
 	if err := ps.wal.WriteSet(key, value); err != nil {
 		return fmt.Errorf("WAL write failed: %w", err)
 	}
-
-	// Then update memory
-	ps.store[key] = value
-	return nil
+	return ps.dict.Set(key, value)
 }
 
 func (ps *PersistentStorage) Delete(key string) error {
-	if _, ok := ps.store[key]; !ok {
+	if !ps.dict.Exists(key) {
 		return ErrKeyNotFound
 	}
 
-	// Write to WAL first
 	if err := ps.wal.WriteDelete(key); err != nil {
 		return fmt.Errorf("WAL write failed: %w", err)
 	}
-
-	// Then delete from memory
-	delete(ps.store, key)
-	return nil
+	return ps.dict.Delete(key)
 }
 
 func (ps *PersistentStorage) Exists(key string) bool {
-	_, ok := ps.store[key]
-	return ok
+	return ps.dict.Exists(key)
 }
 
 func (ps *PersistentStorage) Keys() []string {
-	keys := make([]string, 0, len(ps.store))
-	for k := range ps.store {
-		keys = append(keys, k)
-	}
-	return keys
+	return ps.dict.Keys()
 }
 
 func (ps *PersistentStorage) Size() int {
-	return len(ps.store)
+	return ps.dict.Size()
 }
 
 func (ps *PersistentStorage) Close() error {
 	return ps.wal.Close()
 }
 
-// Compact truncates the WAL (call after creating snapshot)
+// Expire is memory-only (not WAL'd in this sitting).
+func (ps *PersistentStorage) Expire(key string, seconds int64) int {
+	return ps.dict.Expire(key, seconds)
+}
+
+// TTL is memory-only.
+func (ps *PersistentStorage) TTL(key string) int64 {
+	return ps.dict.TTL(key)
+}
+
+// Persist is memory-only.
+func (ps *PersistentStorage) Persist(key string) int {
+	return ps.dict.Persist(key)
+}
+
+// Compact truncates the WAL (call after creating snapshot).
 func (ps *PersistentStorage) Compact() error {
 	return ps.wal.Truncate()
 }

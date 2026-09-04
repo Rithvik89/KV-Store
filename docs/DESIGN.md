@@ -44,3 +44,22 @@ Arm Writable (out buffer + `Modify`) if we see:
 
 Related curriculum ticket: [#22](https://github.com/Rithvik89/memkv/issues/22)
 (deferred relative to this decision; reopen when we choose to implement it).
+
+## Storage: one dict + WAL; lazy-only TTL
+
+**Date:** 2026-09-05  
+**Status:** Accepted
+
+### Decision
+
+- Keep **map + WAL**: WAL for durability/replay, dict for O(1) live state.
+  Write path: WAL first, then dict. Boot: replay WAL → dict.
+- `PersistentStorage` **wraps** `MemoryStorage` + WAL — no second map.
+- TTL is **lazy on access only**. Expired keys may linger until touched.
+  Sampling / `Post` sweeps are out of this sitting. TTL not written to WAL yet.
+
+### Why
+
+WAL-only would make every read scan the log (or reinvent an index = a map).
+Two independent maps duplicated logic. Lazy-only is enough to learn deadlines;
+linger is an explicit trade-off documented in code comments.
