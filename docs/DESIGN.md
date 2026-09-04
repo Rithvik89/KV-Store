@@ -45,21 +45,33 @@ Arm Writable (out buffer + `Modify`) if we see:
 Related curriculum ticket: [#22](https://github.com/Rithvik89/memkv/issues/22)
 (deferred relative to this decision; reopen when we choose to implement it).
 
-## Storage: one dict + WAL; lazy-only TTL
+## Storage: one Store (dict + optional WAL); lazy-only TTL
 
 **Date:** 2026-09-05  
 **Status:** Accepted
 
 ### Decision
 
-- Keep **map + WAL**: WAL for durability/replay, dict for O(1) live state.
-  Write path: WAL first, then dict. Boot: replay WAL → dict.
-- `PersistentStorage` **wraps** `MemoryStorage` + WAL — no second map.
+- Single type `storage.Store`: in-memory dict always; WAL optional
+  (`Open` / `OpenWithWAL` vs `OpenMemory`).
+- Write path when durable: WAL first, then dict. Boot: replay WAL → dict.
 - TTL is **lazy on access only**. Expired keys may linger until touched.
-  Sampling / `Post` sweeps are out of this sitting. TTL not written to WAL yet.
+  Sampling / `Post` sweeps deferred. TTL not written to WAL yet.
 
 ### Why
 
-WAL-only would make every read scan the log (or reinvent an index = a map).
-Two independent maps duplicated logic. Lazy-only is enough to learn deadlines;
-linger is an explicit trade-off documented in code comments.
+One type beats Memory + Persistent wrappers. WAL-only would make every read
+scan the log. Lazy-only is enough to learn deadlines; linger is documented.
+
+## WAL: checksummed records + fsync policy
+
+**Date:** 2026-09-05  
+**Status:** Accepted (#29)
+
+### Decision
+
+- Replace text-line WAL with framed records: `CNDR`+version header;
+  `len | payload | crc32`. Payload is length-prefixed key/value (binary-safe).
+- Fsync policies: `always` (default), `everysec`, `no` via `wal.WithFsync`.
+- Still **one file**. Multi-segment + compaction = #31. Torn-tail / kill-9 = #30.
+- Incomplete trailing record stops replay without error; CRC mismatch is corrupt.

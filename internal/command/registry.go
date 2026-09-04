@@ -29,9 +29,9 @@ type Executor struct {
 	commands map[string]Command
 }
 
-// New creates a command registry with persistent storage and the built-in verbs.
+// New creates a command registry with a durable Store and the built-in verbs.
 func New(walPath string) (*Executor, error) {
-	store, err := storage.NewPersistentStorage(walPath)
+	store, err := storage.Open(walPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create storage: %w", err)
 	}

@@ -9,7 +9,7 @@ import (
 
 func newTestExecutor(t *testing.T) *Executor {
 	t.Helper()
-	return NewWithStorage(storage.NewMemoryStorage())
+	return NewWithStorage(storage.OpenMemory())
 }
 
 func TestExecPing(t *testing.T) {

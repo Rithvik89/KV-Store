@@ -7,9 +7,9 @@ var (
 	ErrKeyExists   = errors.New("key already exists")
 )
 
-// Storage defines the interface for key-value storage operations.
+// Storage is the keyspace API implemented by Store.
 //
-// Expire / TTL / Persist are in-memory only in this sitting (not WAL'd).
+// Expire / TTL / Persist are in-memory only (not WAL'd yet).
 type Storage interface {
 	Get(key string) (string, error)
 	Set(key string, value string) error

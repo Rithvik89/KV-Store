@@ -7,9 +7,10 @@ Format inspired by [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
+- Checksummed WAL records (`CNDR` header, length-prefixed payload, CRC32) with
+  fsync policies `always` / `everysec` / `no` (`wal.WithFsync`).
 - One-dict keyspace with lazy TTL (`internal/storage`): `entry{value,expire}`;
-  EXPIRE / TTL / PERSIST on the command table. Persistent path wraps the same
-  dict + WAL (no second map). TTL is memory-only this sitting.
+  EXPIRE / TTL / PERSIST on the command table. TTL is memory-only this sitting.
 - Cinder curriculum tracker and labeled issues; `TODO.md` on `main`.
 - Event loop refactor (branch `cinder/21-eventloop`): `Poller` + `Loop` with
   Darwin kqueue and Linux epoll; readiness-only package; socketpair tests.
@@ -23,6 +24,8 @@ Format inspired by [Keep a Changelog](https://keepachangelog.com/).
 
 ### Changed
 
+- Collapsed `MemoryStorage` / `PersistentStorage` into `storage.Store`
+  (`Open` / `OpenMemory`); WAL is optional on the same type.
 - Accept / read / write moved out of `eventloop` into `server` (naive
   read→process→write path).
 - Server live path no longer uses `strings.Fields` line protocol.
@@ -33,10 +36,12 @@ Format inspired by [Keep a Changelog](https://keepachangelog.com/).
   written inside `OnReadable`. `OnWritable` kept on the API but unused until
   out-buffer / write-interest arming is needed. See [docs/DESIGN.md](docs/DESIGN.md).
 - **#22 server I/O polish:** backlog — functional structure first.
-- **Map + WAL, one dict:** WAL is durability/replay; the dict is the live
-  keyspace. PersistentStorage wraps dict + WAL (do not duplicate maps).
+- **Map + WAL, one Store:** WAL is durability/replay; the dict is the live
+  keyspace. `OpenMemory` skips the WAL for tests.
 - **Lazy-only TTL:** expired keys are removed on access; they may linger until
   then. Sampling deferred.
+- **WAL framing (#29):** one file, checksummed records, explicit fsync policy;
+  multi-segment compaction later (#31).
 
 ## [0.1.0] — prior
 
