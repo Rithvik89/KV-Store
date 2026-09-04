@@ -16,6 +16,7 @@ Format inspired by [Keep a Changelog](https://keepachangelog.com/).
 - Command dispatch table (`internal/command`): verb → handler registry; arity
   checked in one place; `NewWithStorage` for tests.
 - Renamed package `executor` → `command`.
+- CSP CLI (`cmd/cli`): no cobra; `cinder>` REPL; default port 9573; `-raw`.
 
 ### Changed
 
