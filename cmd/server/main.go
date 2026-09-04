@@ -20,7 +20,7 @@ func main() {
 
 	// Create server configuration
 	cfg := server.Config{
-		Port:    6178,
+		Port:    9573,
 		WALPath: "/tmp/wal.log",
 	}
 
