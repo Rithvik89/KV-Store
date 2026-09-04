@@ -7,7 +7,9 @@ var (
 	ErrKeyExists   = errors.New("key already exists")
 )
 
-// Storage defines the interface for key-value storage operations
+// Storage defines the interface for key-value storage operations.
+//
+// Expire / TTL / Persist are in-memory only in this sitting (not WAL'd).
 type Storage interface {
 	Get(key string) (string, error)
 	Set(key string, value string) error
@@ -16,4 +18,12 @@ type Storage interface {
 	Keys() []string
 	Size() int
 	Close() error
+
+	// Expire sets a TTL in seconds. Returns 1 if the key exists, else 0.
+	// seconds <= 0 deletes the key immediately (Redis-compatible).
+	Expire(key string, seconds int64) int
+	// TTL returns seconds left, -1 if no expiry, -2 if missing.
+	TTL(key string) int64
+	// Persist clears expiry. Returns 1 if a timeout was removed, else 0.
+	Persist(key string) int
 }

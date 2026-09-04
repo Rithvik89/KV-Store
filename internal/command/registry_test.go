@@ -72,9 +72,35 @@ func TestExecWrongArity(t *testing.T) {
 
 func TestDispatchTableHasBuiltins(t *testing.T) {
 	e := newTestExecutor(t)
-	for _, name := range []string{"PING", "ECHO", "SET", "GET", "DEL", "DELETE", "EXISTS", "KEYS"} {
+	for _, name := range []string{"PING", "ECHO", "SET", "GET", "DEL", "DELETE", "EXISTS", "KEYS", "EXPIRE", "TTL", "PERSIST"} {
 		if _, ok := e.commands[name]; !ok {
 			t.Fatalf("missing command %s", name)
 		}
+	}
+}
+
+func TestExecExpireTTLPersist(t *testing.T) {
+	e := newTestExecutor(t)
+	if v := e.Exec([]string{"EXPIRE", "missing", "10"}); v.Kind != proto.KindInteger || v.Int != 0 {
+		t.Fatalf("EXPIRE miss %+v", v)
+	}
+	e.Exec([]string{"SET", "k", "v"})
+	if v := e.Exec([]string{"TTL", "k"}); v.Kind != proto.KindInteger || v.Int != -1 {
+		t.Fatalf("TTL no expiry %+v", v)
+	}
+	if v := e.Exec([]string{"EXPIRE", "k", "60"}); v.Kind != proto.KindInteger || v.Int != 1 {
+		t.Fatalf("EXPIRE %+v", v)
+	}
+	if v := e.Exec([]string{"TTL", "k"}); v.Kind != proto.KindInteger || v.Int <= 0 || v.Int > 60 {
+		t.Fatalf("TTL %+v", v)
+	}
+	if v := e.Exec([]string{"PERSIST", "k"}); v.Kind != proto.KindInteger || v.Int != 1 {
+		t.Fatalf("PERSIST %+v", v)
+	}
+	if v := e.Exec([]string{"TTL", "k"}); v.Kind != proto.KindInteger || v.Int != -1 {
+		t.Fatalf("TTL after PERSIST %+v", v)
+	}
+	if v := e.Exec([]string{"EXPIRE", "k", "notint"}); v.Kind != proto.KindError {
+		t.Fatalf("EXPIRE bad int %+v", v)
 	}
 }
