@@ -69,13 +69,12 @@ Existing packages. Rewrite the body; keep the name.
   - PING, ECHO, GET, SET, DEL first; later sittings only register more verbs
   - Connection mode deferred to #27
 - [x] [#26](https://github.com/Rithvik89/memkv/issues/26) **Storage** — `internal/storage`
-  - One dict. Persistent path wraps that dict + WAL (do not copy the map twice)
-  - Lazy expire on access (linger comments); sampling deferred
-  - EXPIRE / TTL / PERSIST; TTL not in WAL yet
-  - Values still `string` (bytes later)
-- [ ] [#29](https://github.com/Rithvik89/memkv/issues/29) **WAL write path** — `internal/wal`
+  - One `Store` (dict + optional WAL). Lazy expire; EXPIRE / TTL / PERSIST
+  - TTL not in WAL yet; values still `string`
+- [x] [#29](https://github.com/Rithvik89/memkv/issues/29) **WAL write path** — `internal/wal`
   - Keep `Write` / `Replay` / `Close` / `Truncate` as the seam
-  - Checksummed records, segments, explicit fsync policy
+  - Checksummed framed records; fsync `always` / `everysec` / `no`
+  - One file (multi-segment = #31)
 - [ ] [#30](https://github.com/Rithvik89/memkv/issues/30) **WAL recovery** — `internal/wal`
   - Replay on boot
   - Detect a torn record at the tail and stop there

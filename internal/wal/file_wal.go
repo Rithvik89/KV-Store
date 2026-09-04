@@ -1,129 +1,212 @@
 package wal
 
 import (
-	"bufio"
+	"encoding/binary"
 	"fmt"
+	"hash/crc32"
+	"io"
 	"os"
+	"time"
 )
 
-// FileWAL is a file-based implementation of WAL
+// FileWAL is a single-file WAL with checksummed framed records.
 type FileWAL struct {
 	filepath string
 	file     *os.File
 	closed   bool
+	fsync    FsyncPolicy
+	lastSync time.Time
 }
 
-// NewFileWAL creates a new file-based WAL
-func NewFileWAL(filepath string) (*FileWAL, error) {
+// Option configures FileWAL construction.
+type Option func(*FileWAL)
+
+// WithFsync sets the fsync policy (default FsyncAlways).
+func WithFsync(p FsyncPolicy) Option {
+	return func(w *FileWAL) { w.fsync = p }
+}
+
+// NewFileWAL opens or creates a file-based WAL at path.
+func NewFileWAL(filepath string, opts ...Option) (*FileWAL, error) {
 	if filepath == "" {
 		filepath = "wal.log"
 	}
 
-	file, err := os.OpenFile(filepath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	w := &FileWAL{
+		filepath: filepath,
+		fsync:    FsyncAlways,
+	}
+	for _, opt := range opts {
+		opt(w)
+	}
+
+	file, err := os.OpenFile(filepath, os.O_RDWR|os.O_CREATE, 0644)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open WAL file: %w", err)
 	}
+	w.file = file
 
-	return &FileWAL{
-		filepath: filepath,
-		file:     file,
-		closed:   false,
-	}, nil
+	info, err := file.Stat()
+	if err != nil {
+		file.Close()
+		return nil, fmt.Errorf("failed to stat WAL: %w", err)
+	}
+
+	if info.Size() == 0 {
+		if _, err := file.Write(encodeHeader()); err != nil {
+			file.Close()
+			return nil, fmt.Errorf("failed to write WAL header: %w", err)
+		}
+		if err := w.maybeSync(true); err != nil {
+			file.Close()
+			return nil, err
+		}
+	} else {
+		hdr := make([]byte, headerSize)
+		if _, err := io.ReadFull(file, hdr); err != nil {
+			file.Close()
+			return nil, fmt.Errorf("failed to read WAL header: %w", err)
+		}
+		if err := checkHeader(hdr); err != nil {
+			file.Close()
+			return nil, err
+		}
+		if _, err := file.Seek(0, io.SeekEnd); err != nil {
+			file.Close()
+			return nil, fmt.Errorf("failed to seek WAL: %w", err)
+		}
+	}
+
+	w.lastSync = time.Now()
+	return w, nil
 }
 
-// Write appends an entry to the WAL
+// Write appends an entry to the WAL.
 func (w *FileWAL) Write(entry *Entry) error {
 	if w.closed {
 		return ErrWALClosed
 	}
-
-	if entry == nil {
-		return ErrInvalidEntry
+	rec, err := encodeRecord(entry)
+	if err != nil {
+		return err
 	}
-
-	// Write in simple space-separated format
-	line := fmt.Sprintf("%s %s %s\n", entry.Op, entry.Key, entry.Value)
-	if _, err := w.file.WriteString(line); err != nil {
+	if _, err := w.file.Write(rec); err != nil {
 		return fmt.Errorf("failed to write to WAL: %w", err)
 	}
+	return w.maybeSync(false)
+}
 
-	// Sync to ensure durability
+func (w *FileWAL) maybeSync(force bool) error {
+	switch {
+	case force || w.fsync == FsyncAlways:
+		// sync
+	case w.fsync == FsyncNo:
+		return nil
+	case w.fsync == FsyncEverySec:
+		if time.Since(w.lastSync) < time.Second {
+			return nil
+		}
+	}
 	if err := w.file.Sync(); err != nil {
 		return fmt.Errorf("failed to sync WAL: %w", err)
 	}
-
+	w.lastSync = time.Now()
 	return nil
 }
 
-// WriteSet writes a SET operation to the WAL
+// WriteSet writes a SET operation to the WAL.
 func (w *FileWAL) WriteSet(key, value string) error {
-	return w.Write(&Entry{
-		Op:    OpSet,
-		Key:   key,
-		Value: value,
-	})
+	return w.Write(&Entry{Op: OpSet, Key: key, Value: value})
 }
 
-// WriteDelete writes a DELETE operation to the WAL
+// WriteDelete writes a DELETE operation to the WAL.
 func (w *FileWAL) WriteDelete(key string) error {
-	return w.Write(&Entry{
-		Op:  OpDelete,
-		Key: key,
-	})
+	return w.Write(&Entry{Op: OpDelete, Key: key})
 }
 
-// Replay replays the WAL entries using the provided callback
+// Replay walks well-formed records from the start of the file.
+// An incomplete trailing record stops replay without error (torn tail).
 func (w *FileWAL) Replay(callback func(*Entry) error) error {
-	file, err := os.Open(w.filepath)
+	if w.closed {
+		return ErrWALClosed
+	}
+
+	f, err := os.Open(w.filepath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			// No WAL file exists yet, nothing to replay
 			return nil
 		}
 		return fmt.Errorf("failed to open WAL for replay: %w", err)
 	}
-	defer file.Close()
+	defer f.Close()
 
-	scanner := bufio.NewScanner(file)
-	lineNum := 0
-
-	for scanner.Scan() {
-		lineNum++
-		line := scanner.Text()
-
-		var entry Entry
-		n, err := fmt.Sscanf(line, "%s %s %s", &entry.Op, &entry.Key, &entry.Value)
-		if err != nil || n < 2 {
-			// Log warning but continue - don't let one bad entry stop recovery
-			fmt.Printf("Warning: failed to parse WAL entry at line %d: %v\n", lineNum, err)
-			continue
+	hdr := make([]byte, headerSize)
+	if _, err := io.ReadFull(f, hdr); err != nil {
+		if err == io.EOF || err == io.ErrUnexpectedEOF {
+			return nil // empty / header-only incomplete — nothing to replay
 		}
-
-		if err := callback(&entry); err != nil {
-			return fmt.Errorf("replay callback failed at line %d: %w", lineNum, err)
-		}
+		return fmt.Errorf("failed to read WAL header: %w", err)
+	}
+	if err := checkHeader(hdr); err != nil {
+		return err
 	}
 
-	if err := scanner.Err(); err != nil {
-		return fmt.Errorf("error reading WAL: %w", err)
+	lenBuf := make([]byte, 4)
+	for {
+		if _, err := io.ReadFull(f, lenBuf); err != nil {
+			if err == io.EOF || err == io.ErrUnexpectedEOF {
+				return nil // clean EOF or torn length prefix
+			}
+			return fmt.Errorf("failed to read record length: %w", err)
+		}
+		payloadLen := binary.BigEndian.Uint32(lenBuf)
+		// Cap absurd lengths to avoid huge allocs from corruption mid-file.
+		if payloadLen > 64<<20 {
+			return fmt.Errorf("%w: payload too large", ErrCorrupt)
+		}
+		payload := make([]byte, payloadLen)
+		if _, err := io.ReadFull(f, payload); err != nil {
+			if err == io.EOF || err == io.ErrUnexpectedEOF {
+				return nil // torn payload
+			}
+			return fmt.Errorf("failed to read payload: %w", err)
+		}
+		crcBuf := make([]byte, 4)
+		if _, err := io.ReadFull(f, crcBuf); err != nil {
+			if err == io.EOF || err == io.ErrUnexpectedEOF {
+				return nil // torn crc
+			}
+			return fmt.Errorf("failed to read crc: %w", err)
+		}
+		want := binary.BigEndian.Uint32(crcBuf)
+		got := crc32.ChecksumIEEE(payload)
+		if want != got {
+			return fmt.Errorf("%w: crc mismatch", ErrCorrupt)
+		}
+		entry, err := decodePayload(payload)
+		if err != nil {
+			return err
+		}
+		if err := callback(entry); err != nil {
+			return fmt.Errorf("replay callback failed: %w", err)
+		}
 	}
-
-	return nil
 }
 
-// Close closes the WAL file
+// Close syncs (per policy / always on close) and closes the file.
 func (w *FileWAL) Close() error {
 	if w.closed {
 		return nil
 	}
-
 	w.closed = true
-
 	if w.file != nil {
 		if err := w.file.Sync(); err != nil {
+			_ = w.file.Close()
+			w.file = nil
 			return fmt.Errorf("failed to sync before close: %w", err)
 		}
 		if err := w.file.Close(); err != nil {
+			w.file = nil
 			return fmt.Errorf("failed to close WAL: %w", err)
 		}
 		w.file = nil
@@ -131,29 +214,28 @@ func (w *FileWAL) Close() error {
 	return nil
 }
 
-// Truncate clears the WAL file (use after successful snapshot/compaction)
+// Truncate clears the WAL (compaction stub until #31).
 func (w *FileWAL) Truncate() error {
 	if w.closed {
 		return ErrWALClosed
 	}
-
 	if err := w.file.Truncate(0); err != nil {
 		return fmt.Errorf("failed to truncate WAL: %w", err)
 	}
-
-	if _, err := w.file.Seek(0, 0); err != nil {
+	if _, err := w.file.Seek(0, io.SeekStart); err != nil {
 		return fmt.Errorf("failed to seek WAL: %w", err)
 	}
-
-	return nil
+	if _, err := w.file.Write(encodeHeader()); err != nil {
+		return fmt.Errorf("failed to rewrite WAL header: %w", err)
+	}
+	return w.maybeSync(true)
 }
 
-// Size returns the current size of the WAL file in bytes
+// Size returns the current size of the WAL file in bytes.
 func (w *FileWAL) Size() (int64, error) {
 	if w.closed {
 		return 0, ErrWALClosed
 	}
-
 	info, err := os.Stat(w.filepath)
 	if err != nil {
 		return 0, fmt.Errorf("failed to stat WAL: %w", err)
