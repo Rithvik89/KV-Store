@@ -1,107 +1,106 @@
 package executor
 
 import (
-	"fmt"
 	"strings"
 
 	"memkv/internal/logger"
+	"memkv/internal/proto"
 	"memkv/internal/storage"
 )
 
-// ProcessCommand processes a command and returns the response
-func (e *Executor) ProcessCommand(input string) string {
-	parts := strings.Fields(input)
-	if len(parts) == 0 {
-		return "ERROR: empty command"
+// Exec runs one command given as CSP-decoded verb + args and returns a CSP value.
+func (e *Executor) Exec(args []string) proto.Value {
+	if len(args) == 0 {
+		return proto.ErrorMsg("ERR empty command")
 	}
 
-	cmd := strings.ToUpper(parts[0])
-
+	cmd := strings.ToUpper(args[0])
 	switch cmd {
+	case "PING":
+		if len(args) == 1 {
+			return proto.Simple("PONG")
+		}
+		if len(args) == 2 {
+			return proto.Bulk(args[1])
+		}
+		return proto.ErrorMsg("ERR wrong number of arguments for PING")
+	case "ECHO":
+		if len(args) != 2 {
+			return proto.ErrorMsg("ERR wrong number of arguments for ECHO")
+		}
+		return proto.Bulk(args[1])
 	case "SET":
-		return e.handleSet(parts)
+		return e.handleSet(args)
 	case "GET":
-		return e.handleGet(parts)
+		return e.handleGet(args)
 	case "DELETE", "DEL":
-		return e.handleDelete(parts)
+		return e.handleDelete(args)
 	case "EXISTS":
-		return e.handleExists(parts)
+		return e.handleExists(args)
 	case "KEYS":
 		return e.handleKeys()
-	case "PING":
-		return "PONG"
 	default:
-		return fmt.Sprintf("ERROR: unknown command '%s'", cmd)
+		return proto.Errorf("ERR unknown command '%s'", cmd)
 	}
 }
 
-func (e *Executor) handleSet(parts []string) string {
-	if len(parts) < 3 {
-		return "ERROR: SET requires key and value"
+func (e *Executor) handleSet(args []string) proto.Value {
+	if len(args) < 3 {
+		return proto.ErrorMsg("ERR wrong number of arguments for SET")
 	}
-
-	key := parts[1]
-	value := strings.Join(parts[2:], " ")
-
+	key := args[1]
+	value := strings.Join(args[2:], " ")
 	if err := e.storage.Set(key, value); err != nil {
 		logger.Error("SET failed: %v", err)
-		return fmt.Sprintf("ERROR: %v", err)
+		return proto.Errorf("ERR %v", err)
 	}
-
-	return "OK"
+	return proto.Simple("OK")
 }
 
-func (e *Executor) handleGet(parts []string) string {
-	if len(parts) < 2 {
-		return "ERROR: GET requires key"
+func (e *Executor) handleGet(args []string) proto.Value {
+	if len(args) != 2 {
+		return proto.ErrorMsg("ERR wrong number of arguments for GET")
 	}
-
-	key := parts[1]
-	value, err := e.storage.Get(key)
+	value, err := e.storage.Get(args[1])
 	if err == storage.ErrKeyNotFound {
-		return "(nil)"
+		return proto.Null()
 	}
 	if err != nil {
 		logger.Error("GET failed: %v", err)
-		return fmt.Sprintf("ERROR: %v", err)
+		return proto.Errorf("ERR %v", err)
 	}
-
-	return value
+	return proto.Bulk(value)
 }
 
-func (e *Executor) handleDelete(parts []string) string {
-	if len(parts) < 2 {
-		return "ERROR: DELETE requires key"
+func (e *Executor) handleDelete(args []string) proto.Value {
+	if len(args) != 2 {
+		return proto.ErrorMsg("ERR wrong number of arguments for DEL")
 	}
-
-	key := parts[1]
-	if err := e.storage.Delete(key); err != nil {
+	if err := e.storage.Delete(args[1]); err != nil {
 		if err == storage.ErrKeyNotFound {
-			return "0"
+			return proto.Integer(0)
 		}
 		logger.Error("DELETE failed: %v", err)
-		return fmt.Sprintf("ERROR: %v", err)
+		return proto.Errorf("ERR %v", err)
 	}
-
-	return "1"
+	return proto.Integer(1)
 }
 
-func (e *Executor) handleExists(parts []string) string {
-	if len(parts) < 2 {
-		return "ERROR: EXISTS requires key"
+func (e *Executor) handleExists(args []string) proto.Value {
+	if len(args) != 2 {
+		return proto.ErrorMsg("ERR wrong number of arguments for EXISTS")
 	}
-
-	key := parts[1]
-	if e.storage.Exists(key) {
-		return "1"
+	if e.storage.Exists(args[1]) {
+		return proto.Integer(1)
 	}
-	return "0"
+	return proto.Integer(0)
 }
 
-func (e *Executor) handleKeys() string {
+func (e *Executor) handleKeys() proto.Value {
 	keys := e.storage.Keys()
-	if len(keys) == 0 {
-		return "(empty list)"
+	items := make([]proto.Value, len(keys))
+	for i, k := range keys {
+		items[i] = proto.Bulk(k)
 	}
-	return strings.Join(keys, "\n")
+	return proto.Array(items...)
 }
