@@ -68,3 +68,8 @@ func (ms *MemoryStorage) Clear() error {
 func (ms *MemoryStorage) Size() int {
 	return len(ms.store)
 }
+
+// Close implements Storage. MemoryStorage has nothing to release.
+func (ms *MemoryStorage) Close() error {
+	return nil
+}
