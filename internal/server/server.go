@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"net"
 
+	"memkv/internal/command"
 	"memkv/internal/eventloop"
-	"memkv/internal/executor"
 	"memkv/internal/logger"
 	"memkv/internal/proto"
 
@@ -24,7 +24,7 @@ import (
 // fuller conn model parked in #22.
 type Server struct {
 	port     int
-	executor *executor.Executor
+	commands *command.Executor
 	loop     *eventloop.Loop
 	lnFD     int
 	listener net.Listener
@@ -39,14 +39,14 @@ type Config struct {
 
 // New creates a new server instance
 func New(cfg Config) (*Server, error) {
-	exec, err := executor.New(cfg.WALPath)
+	cmds, err := command.New(cfg.WALPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create executor: %w", err)
+		return nil, fmt.Errorf("failed to create command registry: %w", err)
 	}
 
 	return &Server{
 		port:     cfg.Port,
-		executor: exec,
+		commands: cmds,
 		lnFD:     -1,
 		pending:  make(map[int][]byte),
 	}, nil
@@ -90,8 +90,8 @@ func (s *Server) Close() error {
 	if s.loop != nil {
 		s.loop.Stop()
 	}
-	if s.executor != nil {
-		return s.executor.Close()
+	if s.commands != nil {
+		return s.commands.Close()
 	}
 	return nil
 }
@@ -186,7 +186,7 @@ func (s *Server) drainCSP(fd int) {
 		if argErr != nil {
 			reply = proto.ErrorMsg("ERR protocol error")
 		} else {
-			reply = s.executor.Exec(args)
+			reply = s.commands.Exec(args)
 		}
 		_, _ = unix.Write(fd, proto.EncodeValue(reply))
 	}

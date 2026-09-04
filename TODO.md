@@ -14,7 +14,7 @@ internal/logger/
 internal/eventloop/         poller + loop only
 internal/server/            listener, conns, read / frame / flush
 internal/proto/             CSP
-internal/executor/          dispatch table, handlers
+internal/command/           dispatch table, handlers
 internal/storage/           dict, TTL, sampling
 internal/pubsub/            channels, subscribe mode
 internal/stream/            log, XREAD, groups
@@ -24,7 +24,7 @@ internal/info/              INFO counters
 Makefile  go.mod  scripts/  tests beside each package
 ```
 
-`server` owns sockets. `eventloop` only reports readiness. `executor` never sees an fd. `storage` never sees a socket.
+`server` owns sockets. `eventloop` only reports readiness. `command` never sees an fd. `storage` never sees a socket.
 
 Out of scope here (other majors / later): cluster, sharding, replication, auth, lists/sets/hashes, LSM.
 
@@ -34,7 +34,7 @@ Out of scope here (other majors / later): cluster, sharding, replication, auth, 
 | --- | --- | --- | --- |
 | 1 | Event loop | #21 #22 | `eventloop/`, `server/` I/O |
 | 2 | CSP | #23 | `proto/` |
-| 3 | Commands | #24 #25 | `executor/` + CLI |
+| 3 | Commands | #24 #25 | `command/` + CLI |
 | 4 | Keyspace / TTL | #26 | `storage/` |
 | 5 | Pub/Sub | #27 | `pubsub/` + conn mode |
 | 6 | Streams | #28 | `stream/` |
@@ -63,11 +63,11 @@ Existing packages. Rewrite the body; keep the name.
   - Per-conn in/out buffers, read-until-`EAGAIN`, write-interest arming
   - Partial frames, pipelining, half-close still owed replies
   - Cap request size so a client with no delimiter cannot grow RAM forever
-- [ ] [#24](https://github.com/Rithvik89/memkv/issues/24) **Executor** — `internal/executor`
+- [x] [#24](https://github.com/Rithvik89/memkv/issues/24) **Command dispatch** — `internal/command`
   - Dispatch table (verb → handler), not a growing `switch`
   - Arity / type errors as CSP error replies
   - PING, ECHO, GET, SET, DEL first; later sittings only register more verbs
-  - Connection mode: normal vs subscribed
+  - Connection mode deferred to #27
 - [ ] [#26](https://github.com/Rithvik89/memkv/issues/26) **Storage** — `internal/storage`
   - One dict. Persistent path wraps that dict + WAL (do not copy the map twice)
   - Implement `Storage` fully (`MemoryStorage` is missing `Close`)
@@ -103,7 +103,7 @@ Packages and surfaces that are not in this tree yet.
 - [ ] [#23](https://github.com/Rithvik89/memkv/issues/23) **`internal/proto` (CSP)**
   - Simple string, error, integer, bulk string, array
   - Incremental decode over a byte buffer
-  - Encode replies the executor returns
+  - Encode replies the command layer returns
   - Nothing else parses bytes
 - [ ] [#27](https://github.com/Rithvik89/memkv/issues/27) **`internal/pubsub`**
   - `SUBSCRIBE` / `UNSUBSCRIBE` / `PUBLISH`
