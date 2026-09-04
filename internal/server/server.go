@@ -3,11 +3,11 @@ package server
 import (
 	"fmt"
 	"net"
-	"strings"
 
 	"memkv/internal/eventloop"
 	"memkv/internal/executor"
 	"memkv/internal/logger"
+	"memkv/internal/proto"
 
 	"golang.org/x/sys/unix"
 )
@@ -18,12 +18,17 @@ import (
 // Design decision (docs/DESIGN.md): client fds are registered Readable-only;
 // replies are written inside OnReadable. OnWritable is a no-op until we need
 // out-buffer / write-interest arming.
+//
+// Wire format is CSP (internal/proto). A small pending buffer per fd holds
+// incomplete values across reads — enough for incremental Decode, not the
+// fuller conn model parked in #22.
 type Server struct {
 	port     int
 	executor *executor.Executor
 	loop     *eventloop.Loop
 	lnFD     int
 	listener net.Listener
+	pending  map[int][]byte // incomplete CSP bytes per client fd
 }
 
 // Config holds server configuration
@@ -43,6 +48,7 @@ func New(cfg Config) (*Server, error) {
 		port:     cfg.Port,
 		executor: exec,
 		lnFD:     -1,
+		pending:  make(map[int][]byte),
 	}, nil
 }
 
@@ -140,6 +146,7 @@ func (s *Server) accept() error {
 			logger.Error("Failed to register client: %v", err)
 			continue
 		}
+		s.pending[nfd] = nil
 		logger.Info("New connection established on fd %d", nfd)
 	}
 }
@@ -149,9 +156,8 @@ func (s *Server) readClient(fd int) {
 	n, err := unix.Read(fd, buf)
 
 	if n > 0 {
-		input := strings.TrimSpace(string(buf[:n]))
-		output := s.executor.ProcessCommand(input) + "\n"
-		_, _ = unix.Write(fd, []byte(output))
+		s.pending[fd] = append(s.pending[fd], buf[:n]...)
+		s.drainCSP(fd)
 	}
 
 	if err != nil || n == 0 {
@@ -159,7 +165,35 @@ func (s *Server) readClient(fd int) {
 	}
 }
 
+// drainCSP decodes and executes every complete CSP value in the pending buffer.
+func (s *Server) drainCSP(fd int) {
+	for {
+		cur := s.pending[fd]
+		v, rest, ok, err := proto.Decode(cur)
+		if err != nil {
+			reply := proto.EncodeValue(proto.ErrorMsg("ERR protocol error"))
+			_, _ = unix.Write(fd, reply)
+			s.closeConn(fd)
+			return
+		}
+		if !ok {
+			return
+		}
+		s.pending[fd] = rest
+
+		var reply proto.Value
+		args, argErr := proto.CommandArgs(v)
+		if argErr != nil {
+			reply = proto.ErrorMsg("ERR protocol error")
+		} else {
+			reply = s.executor.Exec(args)
+		}
+		_, _ = unix.Write(fd, proto.EncodeValue(reply))
+	}
+}
+
 func (s *Server) closeConn(fd int) {
+	delete(s.pending, fd)
 	_ = s.loop.Deregister(fd)
 	_ = unix.Close(fd)
 	logger.Info("Closed connection on fd %d", fd)
