@@ -1,4 +1,4 @@
-package executor
+package command
 
 import (
 	"fmt"
@@ -20,13 +20,16 @@ type Command struct {
 	Fn      HandlerFunc
 }
 
-// Executor handles command execution via a verb → handler registry.
+// Executor is the command registry: verb → handler, plus the backing store.
+//
+// Named Executor for the Exec entry point (run this command). The package is
+// command so call sites read as command.New / commands.Exec.
 type Executor struct {
 	storage  storage.Storage
 	commands map[string]Command
 }
 
-// New creates an executor with persistent in-memory storage and the built-in commands.
+// New creates a command registry with persistent storage and the built-in verbs.
 func New(walPath string) (*Executor, error) {
 	store, err := storage.NewPersistentStorage(walPath)
 	if err != nil {
@@ -36,7 +39,7 @@ func New(walPath string) (*Executor, error) {
 	return NewWithStorage(store), nil
 }
 
-// NewWithStorage builds an executor around an existing store (tests, alternate backends).
+// NewWithStorage builds a registry around an existing store (tests, alternate backends).
 func NewWithStorage(store storage.Storage) *Executor {
 	e := &Executor{
 		storage:  store,

@@ -12,9 +12,10 @@ Format inspired by [Keep a Changelog](https://keepachangelog.com/).
   Darwin kqueue and Linux epoll; readiness-only package; socketpair tests.
 - `docs/DESIGN.md` for standing design decisions.
 - CSP (`internal/proto`): RESP-shaped encode/decode with incremental framing;
-  server speaks CSP; executor returns `proto.Value`.
-- Executor dispatch table: verb → handler registry (`PING`/`GET`/…); arity
+  server speaks CSP; command layer returns `proto.Value`.
+- Command dispatch table (`internal/command`): verb → handler registry; arity
   checked in one place; `NewWithStorage` for tests.
+- Renamed package `executor` → `command`.
 
 ### Changed
 
