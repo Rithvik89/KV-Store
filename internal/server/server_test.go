@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"io"
 	"net"
 	"path/filepath"
@@ -140,6 +141,57 @@ func TestShutdownStopsStart(t *testing.T) {
 	}
 	if err := srv.Close(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestServerINFO(t *testing.T) {
+	_, addr := startTestServer(t)
+	conn, err := net.DialTimeout("tcp", addr, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	_ = conn.SetDeadline(time.Now().Add(3 * time.Second))
+
+	writeValue(t, conn, proto.Array(proto.Bulk("SET"), proto.Bulk("k"), proto.Bulk("v")))
+	assertValue(t, conn, proto.Simple("OK"))
+	writeValue(t, conn, proto.Array(proto.Bulk("INFO"), proto.Bulk("keyspace")))
+	got := readValue(t, conn)
+	if got.Kind != proto.KindBulk || !bytes.Contains([]byte(got.Str), []byte("keys:1")) {
+		t.Fatalf("INFO %+v", got)
+	}
+}
+
+func readValue(t *testing.T, conn net.Conn) proto.Value {
+	t.Helper()
+	raw := make([]byte, 0, 256)
+	tmp := make([]byte, 256)
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		_ = conn.SetReadDeadline(time.Now().Add(200 * time.Millisecond))
+		n, err := conn.Read(tmp)
+		if n > 0 {
+			raw = append(raw, tmp[:n]...)
+			v, rest, ok, derr := proto.Decode(raw)
+			if derr != nil {
+				t.Fatal(derr)
+			}
+			if ok {
+				if len(rest) != 0 {
+					t.Fatalf("leftover %q", rest)
+				}
+				return v
+			}
+		}
+		if err != nil {
+			if time.Now().After(deadline) {
+				t.Fatalf("timeout reading reply, buf=%q err=%v", raw, err)
+			}
+			if ne, ok := err.(net.Error); ok && ne.Timeout() {
+				continue
+			}
+			t.Fatal(err)
+		}
 	}
 }
 
