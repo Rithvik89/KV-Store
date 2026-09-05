@@ -147,6 +147,9 @@ func (s *Server) accept() error {
 			continue
 		}
 		s.pending[nfd] = nil
+		if m := s.commands.Metrics(); m != nil {
+			m.ClientConnected()
+		}
 		logger.Info("New connection established on fd %d", nfd)
 	}
 }
@@ -193,6 +196,11 @@ func (s *Server) drainCSP(fd int) {
 }
 
 func (s *Server) closeConn(fd int) {
+	if _, ok := s.pending[fd]; ok {
+		if m := s.commands.Metrics(); m != nil {
+			m.ClientDisconnected()
+		}
+	}
 	delete(s.pending, fd)
 	_ = s.loop.Deregister(fd)
 	_ = unix.Close(fd)

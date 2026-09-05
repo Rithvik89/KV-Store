@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	"memkv/internal/info"
 	"memkv/internal/wal"
 )
 
@@ -16,9 +17,10 @@ type entry struct {
 // Store is the keyspace: one in-memory dict, optional WAL for durability.
 // When wal is nil (OpenMemory), mutations stay in RAM only.
 type Store struct {
-	data map[string]entry
-	wal  wal.WAL
-	now  func() int64
+	data    map[string]entry
+	wal     wal.WAL
+	now     func() int64
+	metrics *info.Metrics
 }
 
 // OpenMemory returns a Store with no WAL (tests, ephemeral use).
@@ -34,6 +36,11 @@ func openMemoryWithClock(now func() int64) *Store {
 		data: make(map[string]entry),
 		now:  now,
 	}
+}
+
+// AttachMetrics sets optional INFO counters (nil-safe).
+func (s *Store) AttachMetrics(m *info.Metrics) {
+	s.metrics = m
 }
 
 // Open opens a durable Store at walPath (default fsync: always).
@@ -90,6 +97,7 @@ func (s *Store) expireIfNeeded(key string) {
 	}
 	if s.now() >= e.expire {
 		delete(s.data, key)
+		s.metrics.IncrExpired()
 	}
 }
 
@@ -98,8 +106,10 @@ func (s *Store) Get(key string) (string, error) {
 	s.expireIfNeeded(key)
 	e, ok := s.data[key]
 	if !ok {
+		s.metrics.IncrMiss()
 		return "", ErrKeyNotFound
 	}
+	s.metrics.IncrHit()
 	return e.value, nil
 }
 
@@ -239,4 +249,12 @@ func (s *Store) Compact() error {
 		return fmt.Errorf("WAL compact failed: %w", err)
 	}
 	return nil
+}
+
+// WALBytes returns the on-disk WAL size, or 0 for memory-only stores.
+func (s *Store) WALBytes() (int64, error) {
+	if s.wal == nil {
+		return 0, nil
+	}
+	return s.wal.Size()
 }

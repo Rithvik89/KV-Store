@@ -26,4 +26,7 @@ type IStore interface {
 	TTL(key string) int64
 	// Persist clears expiry. Returns 1 if a timeout was removed, else 0.
 	Persist(key string) int
+
+	// WALBytes is the on-disk WAL size (0 if memory-only).
+	WALBytes() (int64, error)
 }

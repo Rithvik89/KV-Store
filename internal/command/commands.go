@@ -4,6 +4,7 @@ import (
 	"strconv"
 	"strings"
 
+	"memkv/internal/info"
 	"memkv/internal/logger"
 	"memkv/internal/proto"
 	"memkv/internal/store"
@@ -83,4 +84,21 @@ func cmdTTL(e *Executor, args []string) proto.Value {
 
 func cmdPersist(e *Executor, args []string) proto.Value {
 	return proto.Integer(int64(e.store.Persist(args[1])))
+}
+
+func cmdInfo(e *Executor, args []string) proto.Value {
+	section := ""
+	if len(args) > 1 {
+		section = args[1]
+	}
+	walBytes, err := e.store.WALBytes()
+	if err != nil {
+		logger.Error("INFO wal size: %v", err)
+		walBytes = 0
+	}
+	body := e.metrics.Format(section, info.Snapshot{
+		Keys:     e.store.Size(),
+		WALBytes: walBytes,
+	})
+	return proto.Bulk(body)
 }

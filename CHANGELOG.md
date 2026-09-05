@@ -13,6 +13,7 @@ Format inspired by [Keep a Changelog](https://keepachangelog.com/).
   hidden; fsync'd ACK survives unclean reopen (tested).
 - WAL compaction (#31): `Rewrite` live SETs via temp file + atomic rename;
   `Store.Compact` snapshots the dict (maintenance path, not a CSP command).
+- `internal/info` metrics + `INFO` command; `cmd/bench` prints p50/p99 latency.
 - One-dict keyspace with lazy TTL (`internal/store`): `entry{value,expire}`;
   EXPIRE / TTL / PERSIST on the command table. TTL is memory-only this sitting.
 - Cinder curriculum tracker and labeled issues; `TODO.md` on `main`.
@@ -45,6 +46,7 @@ Format inspired by [Keep a Changelog](https://keepachangelog.com/).
 - **#22 server I/O polish:** backlog — functional structure first.
 - **#27 pub/sub / #28 streams:** backlog — KV + WAL path first; elaborated
   requirements stay on the issues until un-parked.
+- **INFO / bench (#32):** process counters + CSP `INFO`; load gen reports p50/p99.
 - **Map + WAL, one Store:** WAL is durability/replay; the dict is the live
   keyspace. `OpenMemory` skips the WAL for tests. Package is `store`.
 - **Lazy-only TTL:** expired keys are removed on access; they may linger until

@@ -56,6 +56,18 @@ Do not implement `internal/pubsub` or `internal/stream` on the current path.
 Both issues stay open with label `backlog` and written requirements for later.
 Focus remains on the KV store, WAL, and process/tooling sittings (#32–#35, #33, #34).
 
+## INFO metrics and load generator
+
+**Date:** 2026-09-05  
+**Status:** Accepted (#32)
+
+### Decision
+
+- `internal/info.Metrics` (atomics) shared by store/command/server.
+- `INFO [section]` returns a Redis-ish bulk string (stats/clients/persistence/keyspace).
+- `cmd/bench` dials CSP and prints p50/p99 (not averages-only).
+- No pub/sub or stream counters while those sittings are backlog.
+
 ## Storage: one Store (dict + optional WAL); lazy-only TTL
 
 **Date:** 2026-09-05  
