@@ -161,3 +161,52 @@ func TestOpenRecoverSpacesInValue(t *testing.T) {
 		t.Fatalf("TTL after recover want -1, got %d", s2.TTL("name"))
 	}
 }
+
+func TestStoreCompactRewritesLiveKeys(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "compact.wal")
+	s, err := Open(path, wal.WithFsync(wal.FsyncAlways))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = s.Set("a", "1")
+	_ = s.Set("b", "2")
+	_ = s.Set("a", "9")
+	_ = s.Delete("b")
+	_ = s.Set("c", "3")
+
+	before, err := s.wal.Size()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Compact(); err != nil {
+		t.Fatal(err)
+	}
+	after, err := s.wal.Size()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after >= before {
+		t.Fatalf("expected smaller WAL after compact: before=%d after=%d", before, after)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	s2, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s2.Close()
+	if s2.Size() != 2 {
+		t.Fatalf("size=%d", s2.Size())
+	}
+	if v, _ := s2.Get("a"); v != "9" {
+		t.Fatalf("a=%q", v)
+	}
+	if v, _ := s2.Get("c"); v != "3" {
+		t.Fatalf("c=%q", v)
+	}
+	if s2.Exists("b") {
+		t.Fatal("b should be gone")
+	}
+}

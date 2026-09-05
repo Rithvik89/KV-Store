@@ -51,6 +51,8 @@ type WAL interface {
 	WriteDelete(key string) error
 	Replay(callback func(*Entry) error) error
 	Close() error
-	Truncate() error
+	// Rewrite replaces the log with the given live SET entries (compaction).
+	// Uses a temp file + atomic rename; not Truncate(0) on the active fd.
+	Rewrite(entries []Entry) error
 	Size() (int64, error)
 }

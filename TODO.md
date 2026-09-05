@@ -72,16 +72,15 @@ Existing packages. Rewrite the body; keep the name.
   - One `Store` (dict + optional WAL). Lazy expire; EXPIRE / TTL / PERSIST
   - TTL not in WAL yet; values still `string`
 - [x] [#29](https://github.com/Rithvik89/memkv/issues/29) **WAL write path** — `internal/wal`
-  - Keep `Write` / `Replay` / `Close` / `Truncate` as the seam
+  - Keep `Write` / `Replay` / `Close` / `Rewrite` / `Size` as the seam
   - Checksummed framed records; fsync `always` / `everysec` / `no`
   - One file (multi-segment = #31)
 - [x] [#30](https://github.com/Rithvik89/memkv/issues/30) **WAL recovery** — `internal/wal`
   - Truncate torn tail on open; append-after-tear recovers
   - Fsync'd write survives unclean reopen; mid-file CRC → error
-- [ ] [#31](https://github.com/Rithvik89/memkv/issues/31) **WAL compaction** — `internal/wal`
-  - New segment of live keys, then atomic swap
-  - Not `Truncate(0)` on the same fd
-  - Must not stall the loop long enough for clients to notice
+- [x] [#31](https://github.com/Rithvik89/memkv/issues/31) **WAL compaction** — `internal/wal`
+  - `Rewrite` live SETs via temp + atomic rename (not `Truncate(0)`)
+  - `Store.Compact` from dict; sync/admin only; multi-segment deferred
 - [ ] [#33](https://github.com/Rithvik89/memkv/issues/33) **cmd/server**
   - Config from env (`CINDER_ADDR`, WAL path, fsync, log level)
   - Graceful shutdown that waits for the loop (no `os.Exit` from the signal handler)
