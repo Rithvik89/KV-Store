@@ -36,11 +36,11 @@ Out of scope here (other majors / later): cluster, sharding, replication, auth, 
 | 2 | CSP | #23 | `proto/` |
 | 3 | Commands | #24 #25 | `command/` + CLI |
 | 4 | Keyspace / TTL | #26 | `store/` |
-| 5 | Pub/Sub | #27 | `pubsub/` + conn mode |
-| 6 | Streams | #28 | `stream/` |
-| 7 | AOF | #29 | `wal/` write path |
-| 8 | Recovery | #30 | `wal/` replay + boot |
-| 9 | Compaction | #31 | `wal/` segments |
+| 5 | Pub/Sub | #27 | `pubsub/` + conn mode — **backlog** |
+| 6 | Streams | #28 | `stream/` — **backlog** |
+| 7 | AOF | #29 | `wal/` write path — done |
+| 8 | Recovery | #30 | `wal/` replay — done |
+| 9 | Compaction | #31 | `wal/` compact — done |
 | 10 | Benchmarks | #32 | `info/` + load gen |
 | — | Process wiring | #33 | `cmd/server` |
 | — | Logger + Makefile | #34 | `logger/`, `Makefile` |
@@ -67,7 +67,7 @@ Existing packages. Rewrite the body; keep the name.
   - Dispatch table (verb → handler), not a growing `switch`
   - Arity / type errors as CSP error replies
   - PING, ECHO, GET, SET, DEL first; later sittings only register more verbs
-  - Connection mode deferred to #27
+  - Connection mode deferred to #27 (**backlog**)
 - [x] [#26](https://github.com/Rithvik89/memkv/issues/26) **Storage** — `internal/store`
   - One `Store` (dict + optional WAL). Lazy expire; EXPIRE / TTL / PERSIST
   - TTL not in WAL yet; values still `string`
@@ -87,7 +87,7 @@ Existing packages. Rewrite the body; keep the name.
 - [ ] [#25](https://github.com/Rithvik89/memkv/issues/25) **cmd/cli**
   - Drop cobra
   - Speak CSP
-  - GET/SET/DEL, then SUBSCRIBE / XREAD
+  - GET/SET/DEL (SUBSCRIBE / XREAD when #27/#28 leave backlog)
 - [ ] [#34](https://github.com/Rithvik89/memkv/issues/34) **Logger + Makefile**
   - Inject the logger; tests can silence it
   - `run`, `test`, `race`, `smoke`, `bench`
@@ -102,11 +102,11 @@ Packages and surfaces that are not in this tree yet.
   - Incremental decode over a byte buffer
   - Encode replies the command layer returns
   - Nothing else parses bytes
-- [ ] [#27](https://github.com/Rithvik89/memkv/issues/27) **`internal/pubsub`**
+- [ ] [#27](https://github.com/Rithvik89/memkv/issues/27) **`internal/pubsub`** — **backlog**
   - `SUBSCRIBE` / `UNSUBSCRIBE` / `PUBLISH`
   - Fan-out from the loop thread
   - Slow-subscriber policy, tested
-- [ ] [#28](https://github.com/Rithvik89/memkv/issues/28) **`internal/stream`**
+- [ ] [#28](https://github.com/Rithvik89/memkv/issues/28) **`internal/stream`** — **backlog**
   - Monotonic entry IDs, `XADD`, range read
   - Blocking `XREAD` that parks the client without parking the loop
   - Consumer groups + ack

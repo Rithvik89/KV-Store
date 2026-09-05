@@ -45,6 +45,17 @@ Arm Writable (out buffer + `Modify`) if we see:
 Related curriculum ticket: [#22](https://github.com/Rithvik89/memkv/issues/22)
 (deferred relative to this decision; reopen when we choose to implement it).
 
+## Backlog: pub/sub (#27) and streams (#28)
+
+**Date:** 2026-09-05  
+**Status:** Backlog
+
+### Decision
+
+Do not implement `internal/pubsub` or `internal/stream` on the current path.
+Both issues stay open with label `backlog` and written requirements for later.
+Focus remains on the KV store, WAL, and process/tooling sittings (#32–#35, #33, #34).
+
 ## Storage: one Store (dict + optional WAL); lazy-only TTL
 
 **Date:** 2026-09-05  

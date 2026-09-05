@@ -43,6 +43,8 @@ Format inspired by [Keep a Changelog](https://keepachangelog.com/).
   written inside `OnReadable`. `OnWritable` kept on the API but unused until
   out-buffer / write-interest arming is needed. See [docs/DESIGN.md](docs/DESIGN.md).
 - **#22 server I/O polish:** backlog — functional structure first.
+- **#27 pub/sub / #28 streams:** backlog — KV + WAL path first; elaborated
+  requirements stay on the issues until un-parked.
 - **Map + WAL, one Store:** WAL is durability/replay; the dict is the live
   keyspace. `OpenMemory` skips the WAL for tests. Package is `store`.
 - **Lazy-only TTL:** expired keys are removed on access; they may linger until
