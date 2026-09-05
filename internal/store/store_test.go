@@ -4,6 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"memkv/internal/info"
 	"memkv/internal/wal"
 )
 
@@ -116,6 +117,23 @@ func TestSetClearsExpiry(t *testing.T) {
 	_ = s.Set("k", "v2")
 	if s.TTL("k") != -1 {
 		t.Fatal("SET should clear expiry")
+	}
+}
+
+func TestExpiredIncrementsMetrics(t *testing.T) {
+	now := int64(1_000_000)
+	s := openMemoryWithClock(func() int64 { return now })
+	m := info.New()
+	s.AttachMetrics(m)
+	_ = s.Set("k", "v")
+	_ = s.Expire("k", 1)
+	now = 1_000_000 + 2_000
+	_, err := s.Get("k")
+	if err != ErrKeyNotFound {
+		t.Fatal(err)
+	}
+	if m.Expired.Load() != 1 || m.Misses.Load() != 1 {
+		t.Fatalf("expired=%d misses=%d", m.Expired.Load(), m.Misses.Load())
 	}
 }
 

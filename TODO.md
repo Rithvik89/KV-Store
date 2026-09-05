@@ -52,13 +52,13 @@ First green slice: `printf 'PING\r\n' | nc 127.0.0.1 7379` returns a CSP `+PONG`
 
 Existing packages. Rewrite the body; keep the name.
 
-- [ ] [#21](https://github.com/Rithvik89/memkv/issues/21) **Event loop** — `internal/eventloop`
+- [x] [#21](https://github.com/Rithvik89/memkv/issues/21) **Event loop** — `internal/eventloop`
   - Split kqueue vs epoll behind one `Poller`
-  - Level-triggered read **and** write interest
+  - Level-triggered read interest (`Writable` API present; full write-interest path = #22 backlog)
   - `Register` / `Modify` / `Deregister` / `Run` / `Post` / `Stop`
   - Pin the loop thread; `EINTR` is normal; handler errors do not kill the loop
   - Drop accept, parse, and `Write` from this package
-- [ ] [#22](https://github.com/Rithvik89/memkv/issues/22) **Server I/O** — `internal/server`
+- [ ] [#22](https://github.com/Rithvik89/memkv/issues/22) **Server I/O** — `internal/server` — **backlog**
   - Open the listener with socket/bind/listen (loop needs the raw fd)
   - Per-conn in/out buffers, read-until-`EAGAIN`, write-interest arming
   - Partial frames, pipelining, half-close still owed replies
@@ -90,7 +90,7 @@ Existing packages. Rewrite the body; keep the name.
 - [x] [#34](https://github.com/Rithvik89/memkv/issues/34) **Logger + Makefile**
   - Injectable logger; tests use `Discard` / `TestMain`
   - `make test`, `race`, `run`, `smoke`, `bench`
-- [ ] [#25](https://github.com/Rithvik89/memkv/issues/25) **cmd/cli**
+- [x] [#25](https://github.com/Rithvik89/memkv/issues/25) **cmd/cli**
   - Drop cobra
   - Speak CSP
   - GET/SET/DEL (SUBSCRIBE / XREAD when #27/#28 leave backlog)
@@ -99,7 +99,7 @@ Existing packages. Rewrite the body; keep the name.
 
 Packages and surfaces that are not in this tree yet.
 
-- [ ] [#23](https://github.com/Rithvik89/memkv/issues/23) **`internal/proto` (CSP)**
+- [x] [#23](https://github.com/Rithvik89/memkv/issues/23) **`internal/proto` (CSP)**
   - Simple string, error, integer, bulk string, array
   - Incremental decode over a byte buffer
   - Encode replies the command layer returns
@@ -112,10 +112,10 @@ Packages and surfaces that are not in this tree yet.
   - Monotonic entry IDs, `XADD`, range read
   - Blocking `XREAD` that parks the client without parking the loop
   - Consumer groups + ack
-- [ ] [#35](https://github.com/Rithvik89/memkv/issues/35) **Tests**
-  - Loop: socketpair, single-thread assertion, write backpressure
-  - Proto: split frames, leftover bytes, arrays
+- [x] [#35](https://github.com/Rithvik89/memkv/issues/35) **Tests** (audit + gap fill)
+  - Loop: socketpair, serial callbacks; write backpressure deferred with #22
+  - Proto: incremental append, nested arrays, corrupt type
   - Commands: arity, unknown verb
-  - Store: TTL lazy + sampling
-  - WAL: kill after ACK, replay, torn tail, compaction
-  - Pub/sub and streams: at least one blocking-client test each
+  - Store: lazy TTL + expired metrics
+  - WAL: ACK, replay, torn tail, compaction
+  - Pub/sub and streams: deferred with #27/#28
