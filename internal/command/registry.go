@@ -8,6 +8,7 @@ import (
 	"memkv/internal/logger"
 	"memkv/internal/proto"
 	"memkv/internal/store"
+	"memkv/internal/wal"
 )
 
 // HandlerFunc runs one command. args[0] is the verb; remaining are arguments.
@@ -32,9 +33,9 @@ type Executor struct {
 }
 
 // New creates a command registry with a durable Store and the built-in verbs.
-func New(walPath string) (*Executor, error) {
+func New(walPath string, opts ...wal.Option) (*Executor, error) {
 	m := info.New()
-	s, err := store.Open(walPath)
+	s, err := store.Open(walPath, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create store: %w", err)
 	}

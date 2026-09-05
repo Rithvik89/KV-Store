@@ -84,9 +84,9 @@ Existing packages. Rewrite the body; keep the name.
 - [x] [#32](https://github.com/Rithvik89/memkv/issues/32) **`internal/info` + bench**
   - Counters: ops, hits/misses, expired, clients, wal_bytes, keys
   - `INFO` command; `cmd/bench` with p50/p99; `make bench`
-- [ ] [#33](https://github.com/Rithvik89/memkv/issues/33) **cmd/server**
-  - Config from env (`CINDER_ADDR`, WAL path, fsync, log level)
-  - Graceful shutdown that waits for the loop (no `os.Exit` from the signal handler)
+- [x] [#33](https://github.com/Rithvik89/memkv/issues/33) **cmd/server**
+  - Env: `CINDER_ADDR`, `CINDER_WAL_PATH`, `CINDER_FSYNC`, `CINDER_LOG_LEVEL`
+  - Graceful shutdown: signal → Shutdown → Start returns → Close WAL (no `os.Exit`)
 - [ ] [#25](https://github.com/Rithvik89/memkv/issues/25) **cmd/cli**
   - Drop cobra
   - Speak CSP

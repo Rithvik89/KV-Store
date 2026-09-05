@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -115,6 +116,22 @@ func (l *Logger) Fatal(format string, args ...interface{}) {
 // SetDefaultLevel sets the log level for the default logger
 func SetDefaultLevel(level LogLevel) {
 	defaultLogger.SetLevel(level)
+}
+
+// ParseLevel maps a string to LogLevel (debug|info|warn|error).
+func ParseLevel(s string) (LogLevel, error) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "debug":
+		return DEBUG, nil
+	case "info", "":
+		return INFO, nil
+	case "warn", "warning":
+		return WARN, nil
+	case "error":
+		return ERROR, nil
+	default:
+		return INFO, fmt.Errorf("unknown log level %q (want debug|info|warn|error)", s)
+	}
 }
 
 // SetDefaultOutput sets the output for the default logger

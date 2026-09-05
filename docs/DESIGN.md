@@ -68,6 +68,18 @@ Focus remains on the KV store, WAL, and process/tooling sittings (#32–#35, #33
 - `cmd/bench` dials CSP and prints p50/p99 (not averages-only).
 - No pub/sub or stream counters while those sittings are backlog.
 
+## cmd/server: env config and graceful shutdown
+
+**Date:** 2026-09-05  
+**Status:** Accepted (#33)
+
+### Decision
+
+- Config from env: `CINDER_ADDR`, `CINDER_WAL_PATH`, `CINDER_FSYNC`, `CINDER_LOG_LEVEL`.
+- Listen via `Config.Addr` (not a bare port field).
+- Signal handler calls `Shutdown()` only (loop.Stop). `main` waits for `Start`
+  to return, then `Close()` for the WAL. No `os.Exit` in the signal path.
+
 ## Storage: one Store (dict + optional WAL); lazy-only TTL
 
 **Date:** 2026-09-05  

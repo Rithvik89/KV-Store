@@ -4,7 +4,6 @@ import (
 	"io"
 	"net"
 	"path/filepath"
-	"strconv"
 	"testing"
 	"time"
 
@@ -69,18 +68,10 @@ func startTestServer(t *testing.T) (*Server, string) {
 		t.Fatal(err)
 	}
 	addr := ln.Addr().String()
-	_, portStr, err := net.SplitHostPort(addr)
-	if err != nil {
-		t.Fatal(err)
-	}
-	port, err := strconv.Atoi(portStr)
-	if err != nil {
-		t.Fatal(err)
-	}
 	_ = ln.Close()
 
 	srv, err := New(Config{
-		Port:    port,
+		Addr:    addr,
 		WALPath: filepath.Join(dir, "wal.log"),
 	})
 	if err != nil {
@@ -109,6 +100,47 @@ func startTestServer(t *testing.T) (*Server, string) {
 	_ = srv.Close()
 	t.Fatal("server did not start")
 	return nil, ""
+}
+
+func TestShutdownStopsStart(t *testing.T) {
+	dir := t.TempDir()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := ln.Addr().String()
+	_ = ln.Close()
+
+	srv, err := New(Config{Addr: addr, WALPath: filepath.Join(dir, "wal.log")})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	done := make(chan error, 1)
+	go func() { done <- srv.Start() }()
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		c, err := net.DialTimeout("tcp", addr, 50*time.Millisecond)
+		if err == nil {
+			_ = c.Close()
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	srv.Shutdown()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Start: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Start did not return after Shutdown")
+	}
+	if err := srv.Close(); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func writeValue(t *testing.T, conn net.Conn, v proto.Value) {
