@@ -29,6 +29,7 @@ type Command struct {
 type Executor struct {
 	store    store.IStore
 	metrics  *info.Metrics
+	log      *logger.Logger
 	commands map[string]Command
 }
 
@@ -40,8 +41,9 @@ func New(walPath string, opts ...wal.Option) (*Executor, error) {
 		return nil, fmt.Errorf("failed to create store: %w", err)
 	}
 	s.AttachMetrics(m)
-	logger.Info("Recovered %d keys from WAL", s.Size())
-	return NewWithStore(s, m), nil
+	e := NewWithStore(s, m)
+	e.logger().Info("Recovered %d keys from WAL", s.Size())
+	return e, nil
 }
 
 // NewWithStore builds a registry around an existing store (tests, alternate backends).
@@ -60,10 +62,26 @@ func NewWithStore(s store.IStore, metrics ...*info.Metrics) *Executor {
 	e := &Executor{
 		store:    s,
 		metrics:  m,
+		log:      logger.Default(),
 		commands: make(map[string]Command),
 	}
 	e.registerBuiltins()
 	return e
+}
+
+// SetLogger injects a logger (nil → Default).
+func (e *Executor) SetLogger(l *logger.Logger) {
+	if l == nil {
+		l = logger.Default()
+	}
+	e.log = l
+}
+
+func (e *Executor) logger() *logger.Logger {
+	if e.log != nil {
+		return e.log
+	}
+	return logger.Default()
 }
 
 // Metrics returns the shared INFO counters.

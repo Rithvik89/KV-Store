@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"memkv/internal/info"
-	"memkv/internal/logger"
 	"memkv/internal/proto"
 	"memkv/internal/store"
 )
@@ -25,7 +24,7 @@ func cmdSet(e *Executor, args []string) proto.Value {
 	key := args[1]
 	value := strings.Join(args[2:], " ")
 	if err := e.store.Set(key, value); err != nil {
-		logger.Error("SET failed: %v", err)
+		e.logger().Error("SET failed: %v", err)
 		return proto.Errorf("ERR %v", err)
 	}
 	return proto.Simple("OK")
@@ -37,7 +36,7 @@ func cmdGet(e *Executor, args []string) proto.Value {
 		return proto.Null()
 	}
 	if err != nil {
-		logger.Error("GET failed: %v", err)
+		e.logger().Error("GET failed: %v", err)
 		return proto.Errorf("ERR %v", err)
 	}
 	return proto.Bulk(value)
@@ -48,7 +47,7 @@ func cmdDel(e *Executor, args []string) proto.Value {
 		if err == store.ErrKeyNotFound {
 			return proto.Integer(0)
 		}
-		logger.Error("DELETE failed: %v", err)
+		e.logger().Error("DELETE failed: %v", err)
 		return proto.Errorf("ERR %v", err)
 	}
 	return proto.Integer(1)
@@ -93,7 +92,7 @@ func cmdInfo(e *Executor, args []string) proto.Value {
 	}
 	walBytes, err := e.store.WALBytes()
 	if err != nil {
-		logger.Error("INFO wal size: %v", err)
+		e.logger().Error("INFO wal size: %v", err)
 		walBytes = 0
 	}
 	body := e.metrics.Format(section, info.Snapshot{

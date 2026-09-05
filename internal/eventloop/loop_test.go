@@ -1,6 +1,7 @@
 package eventloop
 
 import (
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -197,5 +198,50 @@ func TestDeregisterMissingFD(t *testing.T) {
 	defer l.Close()
 	if err := l.Deregister(1 << 20); err != nil {
 		t.Fatalf("Deregister on missing fd: %v", err)
+	}
+}
+
+// Command / store work is intended to stay on the locked loop goroutine
+// (see Loop.Run + `make race`). This test checks callbacks do not overlap.
+func TestLoopCallbacksAreSerial(t *testing.T) {
+	a, b := socketpair(t)
+	defer unix.Close(a)
+	defer unix.Close(b)
+
+	var depth atomic.Int32
+	enter := func() {
+		if n := depth.Add(1); n != 1 {
+			t.Errorf("overlapping callbacks (depth=%d)", n)
+		}
+	}
+	leave := func() { depth.Add(-1) }
+
+	h := &recHandler{}
+	l, err := New(h, 16, 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer l.Close()
+
+	h.onRead = func(fd int) error {
+		enter()
+		defer leave()
+		buf := make([]byte, 8)
+		_, _ = unix.Read(fd, buf)
+		l.Stop()
+		return nil
+	}
+
+	if err := l.Register(a, Readable); err != nil {
+		t.Fatal(err)
+	}
+	l.Post(func() {
+		enter()
+		defer leave()
+		_, _ = unix.Write(b, []byte("x"))
+	})
+
+	if err := l.Run(); err != nil {
+		t.Fatal(err)
 	}
 }

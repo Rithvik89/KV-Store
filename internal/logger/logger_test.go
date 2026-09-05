@@ -1,6 +1,10 @@
 package logger
 
-import "testing"
+import (
+	"bytes"
+	"strings"
+	"testing"
+)
 
 func TestParseLevel(t *testing.T) {
 	cases := []struct {
@@ -23,5 +27,30 @@ func TestParseLevel(t *testing.T) {
 		if !tc.ok && err == nil {
 			t.Fatalf("%q: want error", tc.in)
 		}
+	}
+}
+
+func TestDiscardSilentAndNoExit(t *testing.T) {
+	l := Discard()
+	l.Info("should not appear")
+	l.Fatal("must not exit process")
+}
+
+func TestSetDefaultDiscard(t *testing.T) {
+	prev := Default()
+	t.Cleanup(func() { SetDefault(prev) })
+
+	var buf bytes.Buffer
+	SetDefault(newLogger("test", INFO, &buf, func(int) {}))
+	Info("hello")
+	if !strings.Contains(buf.String(), "hello") {
+		t.Fatalf("%q", buf.String())
+	}
+
+	SetDefault(Discard())
+	buf.Reset()
+	Info("silent")
+	if buf.Len() != 0 {
+		t.Fatalf("expected silence, got %q", buf.String())
 	}
 }

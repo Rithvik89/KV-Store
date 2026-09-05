@@ -7,12 +7,12 @@ import (
 	"testing"
 	"time"
 
+	"memkv/internal/logger"
 	"memkv/internal/proto"
 )
 
 func TestServerCSPPing(t *testing.T) {
-	srv, addr := startTestServer(t)
-	defer srv.Close()
+	_, addr := startTestServer(t)
 
 	conn, err := net.DialTimeout("tcp", addr, time.Second)
 	if err != nil {
@@ -39,8 +39,7 @@ func TestServerCSPPing(t *testing.T) {
 }
 
 func TestServerCSPSetGet(t *testing.T) {
-	srv, addr := startTestServer(t)
-	defer srv.Close()
+	_, addr := startTestServer(t)
 
 	conn, err := net.DialTimeout("tcp", addr, time.Second)
 	if err != nil {
@@ -73,7 +72,7 @@ func startTestServer(t *testing.T) (*Server, string) {
 	srv, err := New(Config{
 		Addr:    addr,
 		WALPath: filepath.Join(dir, "wal.log"),
-	})
+	}, WithLogger(logger.Discard()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,11 +86,12 @@ func startTestServer(t *testing.T) (*Server, string) {
 		if err == nil {
 			_ = c.Close()
 			t.Cleanup(func() {
-				_ = srv.Close()
+				srv.Shutdown()
 				select {
 				case <-done:
 				case <-time.After(2 * time.Second):
 				}
+				_ = srv.Close()
 			})
 			return srv, addr
 		}
@@ -111,7 +111,7 @@ func TestShutdownStopsStart(t *testing.T) {
 	addr := ln.Addr().String()
 	_ = ln.Close()
 
-	srv, err := New(Config{Addr: addr, WALPath: filepath.Join(dir, "wal.log")})
+	srv, err := New(Config{Addr: addr, WALPath: filepath.Join(dir, "wal.log")}, WithLogger(logger.Discard()))
 	if err != nil {
 		t.Fatal(err)
 	}

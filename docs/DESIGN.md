@@ -78,7 +78,18 @@ Focus remains on the KV store, WAL, and process/tooling sittings (#32–#35, #33
 - Config from env: `CINDER_ADDR`, `CINDER_WAL_PATH`, `CINDER_FSYNC`, `CINDER_LOG_LEVEL`.
 - Listen via `Config.Addr` (not a bare port field).
 - Signal handler calls `Shutdown()` only (loop.Stop). `main` waits for `Start`
-  to return, then `Close()` for the WAL. No `os.Exit` in the signal path.
+  to return,   then `Close()` for the WAL. No `os.Exit` in the signal path.
+
+## Logger injection and Makefile gates
+
+**Date:** 2026-09-05  
+**Status:** Accepted (#34)
+
+### Decision
+
+- `logger.Default` / `SetDefault` / `Discard`; server `WithLogger`, command `SetLogger`.
+- Tests silence via `TestMain` + Discard (no stdout spam).
+- Makefile: `test`, `race`, `run`, `smoke`, `bench` — `race` is a required gate.
 
 ## Storage: one Store (dict + optional WAL); lazy-only TTL
 

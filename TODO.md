@@ -87,14 +87,13 @@ Existing packages. Rewrite the body; keep the name.
 - [x] [#33](https://github.com/Rithvik89/memkv/issues/33) **cmd/server**
   - Env: `CINDER_ADDR`, `CINDER_WAL_PATH`, `CINDER_FSYNC`, `CINDER_LOG_LEVEL`
   - Graceful shutdown: signal → Shutdown → Start returns → Close WAL (no `os.Exit`)
+- [x] [#34](https://github.com/Rithvik89/memkv/issues/34) **Logger + Makefile**
+  - Injectable logger; tests use `Discard` / `TestMain`
+  - `make test`, `race`, `run`, `smoke`, `bench`
 - [ ] [#25](https://github.com/Rithvik89/memkv/issues/25) **cmd/cli**
   - Drop cobra
   - Speak CSP
   - GET/SET/DEL (SUBSCRIBE / XREAD when #27/#28 leave backlog)
-- [ ] [#34](https://github.com/Rithvik89/memkv/issues/34) **Logger + Makefile**
-  - Inject the logger; tests can silence it
-  - `run`, `test`, `race`, `smoke`, `bench`
-  - `race` must stay green: command execution never leaves the loop thread
 
 ## Add
 
