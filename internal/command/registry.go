@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"memkv/internal/info"
 	"memkv/internal/logger"
 	"memkv/internal/proto"
 	"memkv/internal/store"
@@ -26,27 +27,47 @@ type Command struct {
 // command so call sites read as command.New / commands.Exec.
 type Executor struct {
 	store    store.IStore
+	metrics  *info.Metrics
 	commands map[string]Command
 }
 
 // New creates a command registry with a durable Store and the built-in verbs.
 func New(walPath string) (*Executor, error) {
+	m := info.New()
 	s, err := store.Open(walPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create store: %w", err)
 	}
+	s.AttachMetrics(m)
 	logger.Info("Recovered %d keys from WAL", s.Size())
-	return NewWithStore(s), nil
+	return NewWithStore(s, m), nil
 }
 
 // NewWithStore builds a registry around an existing store (tests, alternate backends).
-func NewWithStore(s store.IStore) *Executor {
+// metrics may be nil.
+func NewWithStore(s store.IStore, metrics ...*info.Metrics) *Executor {
+	var m *info.Metrics
+	if len(metrics) > 0 {
+		m = metrics[0]
+	}
+	if m == nil {
+		m = info.New()
+	}
+	if st, ok := s.(*store.Store); ok {
+		st.AttachMetrics(m)
+	}
 	e := &Executor{
 		store:    s,
+		metrics:  m,
 		commands: make(map[string]Command),
 	}
 	e.registerBuiltins()
 	return e
+}
+
+// Metrics returns the shared INFO counters.
+func (e *Executor) Metrics() *info.Metrics {
+	return e.metrics
 }
 
 // Close closes the underlying store.
@@ -74,6 +95,7 @@ func (e *Executor) registerBuiltins() {
 	e.register(Command{Name: "EXPIRE", MinArgs: 3, MaxArgs: 3, Fn: cmdExpire})
 	e.register(Command{Name: "TTL", MinArgs: 2, MaxArgs: 2, Fn: cmdTTL})
 	e.register(Command{Name: "PERSIST", MinArgs: 2, MaxArgs: 2, Fn: cmdPersist})
+	e.register(Command{Name: "INFO", MinArgs: 1, MaxArgs: 2, Fn: cmdInfo})
 }
 
 // Exec looks up args[0] in the dispatch table, checks arity, and runs the handler.
@@ -90,5 +112,7 @@ func (e *Executor) Exec(args []string) proto.Value {
 	if len(args) < cmd.MinArgs || (cmd.MaxArgs >= 0 && len(args) > cmd.MaxArgs) {
 		return proto.Errorf("ERR wrong number of arguments for '%s'", cmd.Name)
 	}
-	return cmd.Fn(e, args)
+	v := cmd.Fn(e, args)
+	e.metrics.IncrOp(cmd.Name)
+	return v
 }

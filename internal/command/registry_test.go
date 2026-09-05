@@ -1,6 +1,7 @@
 package command
 
 import (
+	"strings"
 	"testing"
 
 	"memkv/internal/proto"
@@ -72,10 +73,28 @@ func TestExecWrongArity(t *testing.T) {
 
 func TestDispatchTableHasBuiltins(t *testing.T) {
 	e := newTestExecutor(t)
-	for _, name := range []string{"PING", "ECHO", "SET", "GET", "DEL", "DELETE", "EXISTS", "KEYS", "EXPIRE", "TTL", "PERSIST"} {
+	for _, name := range []string{"PING", "ECHO", "SET", "GET", "DEL", "DELETE", "EXISTS", "KEYS", "EXPIRE", "TTL", "PERSIST", "INFO"} {
 		if _, ok := e.commands[name]; !ok {
 			t.Fatalf("missing command %s", name)
 		}
+	}
+}
+
+func TestExecInfo(t *testing.T) {
+	e := newTestExecutor(t)
+	e.Exec([]string{"SET", "k", "v"})
+	e.Exec([]string{"GET", "k"})
+	e.Exec([]string{"GET", "missing"})
+	v := e.Exec([]string{"INFO"})
+	if v.Kind != proto.KindBulk {
+		t.Fatalf("%+v", v)
+	}
+	if !strings.Contains(v.Str, "ops_total:") || !strings.Contains(v.Str, "keyspace_hits:1") {
+		t.Fatalf("INFO body:\n%s", v.Str)
+	}
+	v = e.Exec([]string{"INFO", "keyspace"})
+	if !strings.Contains(v.Str, "keys:1") || strings.Contains(v.Str, "ops_total") {
+		t.Fatalf("section:\n%s", v.Str)
 	}
 }
 

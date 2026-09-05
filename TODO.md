@@ -81,6 +81,9 @@ Existing packages. Rewrite the body; keep the name.
 - [x] [#31](https://github.com/Rithvik89/memkv/issues/31) **WAL compaction** — `internal/wal`
   - `Rewrite` live SETs via temp + atomic rename (not `Truncate(0)`)
   - `Store.Compact` from dict; sync/admin only; multi-segment deferred
+- [x] [#32](https://github.com/Rithvik89/memkv/issues/32) **`internal/info` + bench**
+  - Counters: ops, hits/misses, expired, clients, wal_bytes, keys
+  - `INFO` command; `cmd/bench` with p50/p99; `make bench`
 - [ ] [#33](https://github.com/Rithvik89/memkv/issues/33) **cmd/server**
   - Config from env (`CINDER_ADDR`, WAL path, fsync, log level)
   - Graceful shutdown that waits for the loop (no `os.Exit` from the signal handler)
@@ -110,10 +113,6 @@ Packages and surfaces that are not in this tree yet.
   - Monotonic entry IDs, `XADD`, range read
   - Blocking `XREAD` that parks the client without parking the loop
   - Consumer groups + ack
-- [ ] [#32](https://github.com/Rithvik89/memkv/issues/32) **`internal/info` + load generator**
-  - Counters: ops, hits, expired, connected clients, aof bytes
-  - `INFO` command
-  - Load generator that prints p50/p99
 - [ ] [#35](https://github.com/Rithvik89/memkv/issues/35) **Tests**
   - Loop: socketpair, single-thread assertion, write backpressure
   - Proto: split frames, leftover bytes, arrays
