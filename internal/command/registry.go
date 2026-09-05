@@ -6,7 +6,7 @@ import (
 
 	"memkv/internal/logger"
 	"memkv/internal/proto"
-	"memkv/internal/storage"
+	"memkv/internal/store"
 )
 
 // HandlerFunc runs one command. args[0] is the verb; remaining are arguments.
@@ -25,33 +25,33 @@ type Command struct {
 // Named Executor for the Exec entry point (run this command). The package is
 // command so call sites read as command.New / commands.Exec.
 type Executor struct {
-	storage  storage.Storage
+	store    store.IStore
 	commands map[string]Command
 }
 
 // New creates a command registry with a durable Store and the built-in verbs.
 func New(walPath string) (*Executor, error) {
-	store, err := storage.Open(walPath)
+	s, err := store.Open(walPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create storage: %w", err)
+		return nil, fmt.Errorf("failed to create store: %w", err)
 	}
-	logger.Info("Recovered %d keys from WAL", store.Size())
-	return NewWithStorage(store), nil
+	logger.Info("Recovered %d keys from WAL", s.Size())
+	return NewWithStore(s), nil
 }
 
-// NewWithStorage builds a registry around an existing store (tests, alternate backends).
-func NewWithStorage(store storage.Storage) *Executor {
+// NewWithStore builds a registry around an existing store (tests, alternate backends).
+func NewWithStore(s store.IStore) *Executor {
 	e := &Executor{
-		storage:  store,
+		store:    s,
 		commands: make(map[string]Command),
 	}
 	e.registerBuiltins()
 	return e
 }
 
-// Close closes the underlying storage.
+// Close closes the underlying store.
 func (e *Executor) Close() error {
-	return e.storage.Close()
+	return e.store.Close()
 }
 
 // register adds a command under its Name (upper-cased). Extra aliases share the same Command.

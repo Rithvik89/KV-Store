@@ -4,12 +4,12 @@ import (
 	"testing"
 
 	"memkv/internal/proto"
-	"memkv/internal/storage"
+	"memkv/internal/store"
 )
 
 func newTestExecutor(t *testing.T) *Executor {
 	t.Helper()
-	return NewWithStorage(storage.OpenMemory())
+	return NewWithStore(store.OpenMemory())
 }
 
 func TestExecPing(t *testing.T) {

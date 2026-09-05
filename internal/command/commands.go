@@ -6,7 +6,7 @@ import (
 
 	"memkv/internal/logger"
 	"memkv/internal/proto"
-	"memkv/internal/storage"
+	"memkv/internal/store"
 )
 
 func cmdPing(_ *Executor, args []string) proto.Value {
@@ -23,7 +23,7 @@ func cmdEcho(_ *Executor, args []string) proto.Value {
 func cmdSet(e *Executor, args []string) proto.Value {
 	key := args[1]
 	value := strings.Join(args[2:], " ")
-	if err := e.storage.Set(key, value); err != nil {
+	if err := e.store.Set(key, value); err != nil {
 		logger.Error("SET failed: %v", err)
 		return proto.Errorf("ERR %v", err)
 	}
@@ -31,8 +31,8 @@ func cmdSet(e *Executor, args []string) proto.Value {
 }
 
 func cmdGet(e *Executor, args []string) proto.Value {
-	value, err := e.storage.Get(args[1])
-	if err == storage.ErrKeyNotFound {
+	value, err := e.store.Get(args[1])
+	if err == store.ErrKeyNotFound {
 		return proto.Null()
 	}
 	if err != nil {
@@ -43,8 +43,8 @@ func cmdGet(e *Executor, args []string) proto.Value {
 }
 
 func cmdDel(e *Executor, args []string) proto.Value {
-	if err := e.storage.Delete(args[1]); err != nil {
-		if err == storage.ErrKeyNotFound {
+	if err := e.store.Delete(args[1]); err != nil {
+		if err == store.ErrKeyNotFound {
 			return proto.Integer(0)
 		}
 		logger.Error("DELETE failed: %v", err)
@@ -54,14 +54,14 @@ func cmdDel(e *Executor, args []string) proto.Value {
 }
 
 func cmdExists(e *Executor, args []string) proto.Value {
-	if e.storage.Exists(args[1]) {
+	if e.store.Exists(args[1]) {
 		return proto.Integer(1)
 	}
 	return proto.Integer(0)
 }
 
 func cmdKeys(e *Executor, _ []string) proto.Value {
-	keys := e.storage.Keys()
+	keys := e.store.Keys()
 	items := make([]proto.Value, len(keys))
 	for i, k := range keys {
 		items[i] = proto.Bulk(k)
@@ -74,13 +74,13 @@ func cmdExpire(e *Executor, args []string) proto.Value {
 	if err != nil {
 		return proto.ErrorMsg("ERR value is not an integer or out of range")
 	}
-	return proto.Integer(int64(e.storage.Expire(args[1], seconds)))
+	return proto.Integer(int64(e.store.Expire(args[1], seconds)))
 }
 
 func cmdTTL(e *Executor, args []string) proto.Value {
-	return proto.Integer(e.storage.TTL(args[1]))
+	return proto.Integer(e.store.TTL(args[1]))
 }
 
 func cmdPersist(e *Executor, args []string) proto.Value {
-	return proto.Integer(int64(e.storage.Persist(args[1])))
+	return proto.Integer(int64(e.store.Persist(args[1])))
 }

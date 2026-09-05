@@ -52,16 +52,19 @@ Related curriculum ticket: [#22](https://github.com/Rithvik89/memkv/issues/22)
 
 ### Decision
 
-- Single type `storage.Store`: in-memory dict always; WAL optional
-  (`Open` / `OpenWithWAL` vs `OpenMemory`).
+- Package `internal/store` (not `storage`): single type `store.Store` with
+  interface `IStore` in `istore.go`.
+- In-memory dict always; WAL optional (`Open` / `OpenWithWAL` vs `OpenMemory`).
 - Write path when durable: WAL first, then dict. Boot: replay WAL → dict.
 - TTL is **lazy on access only**. Expired keys may linger until touched.
   Sampling / `Post` sweeps deferred. TTL not written to WAL yet.
 
 ### Why
 
-One type beats Memory + Persistent wrappers. WAL-only would make every read
-scan the log. Lazy-only is enough to learn deadlines; linger is documented.
+One type beats Memory + Persistent wrappers. Package name `store` matches the
+type; `IStore` is the interface file/name so it is not confused with the old
+`storage` package. WAL-only would make every read scan the log. Lazy-only is
+enough to learn deadlines; linger is documented.
 
 ## WAL: checksummed records + fsync policy
 
@@ -74,4 +77,16 @@ scan the log. Lazy-only is enough to learn deadlines; linger is documented.
   `len | payload | crc32`. Payload is length-prefixed key/value (binary-safe).
 - Fsync policies: `always` (default), `everysec`, `no` via `wal.WithFsync`.
 - Still **one file**. Multi-segment + compaction = #31. Torn-tail / kill-9 = #30.
-- Incomplete trailing record stops replay without error; CRC mismatch is corrupt.
+- Incomplete trailing record stops replay without error; CRC mismatch at EOF
+  is treated as torn. Mid-file CRC mismatch is `ErrCorrupt`.
+
+## WAL recovery: truncate torn tail on open
+
+**Date:** 2026-09-05  
+**Status:** Accepted (#30)
+
+### Decision
+
+On `NewFileWAL`, scan for the last good record offset and **truncate** any
+torn suffix before SeekEnd. Otherwise appends land past garbage and Replay
+never sees them. Fsync'd writes are proven to survive unclean reopen in tests.
