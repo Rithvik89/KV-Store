@@ -3,6 +3,7 @@ package server
 import (
 	"fmt"
 	"net"
+	"sync"
 
 	"memkv/internal/command"
 	"memkv/internal/eventloop"
@@ -25,15 +26,33 @@ import (
 // fuller conn model parked in #22.
 type Server struct {
 	addr     string
-	commands *command.Executor
-	loop     *eventloop.Loop
 	lnFD     int
 	listener net.Listener
 	pending  map[int][]byte // incomplete CSP bytes per client fd
+	log      *logger.Logger
+
+	mu       sync.Mutex
+	commands *command.Executor
+	loop     *eventloop.Loop
+}
+
+// Option configures Server construction.
+type Option func(*Server)
+
+// WithLogger injects a logger (tests may pass logger.Discard()).
+func WithLogger(l *logger.Logger) Option {
+	return func(s *Server) { s.log = l }
+}
+
+func (s *Server) logger() *logger.Logger {
+	if s.log != nil {
+		return s.log
+	}
+	return logger.Default()
 }
 
 // New creates a new server instance
-func New(cfg Config) (*Server, error) {
+func New(cfg Config, opts ...Option) (*Server, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
@@ -42,12 +61,20 @@ func New(cfg Config) (*Server, error) {
 		return nil, fmt.Errorf("failed to create command registry: %w", err)
 	}
 
-	return &Server{
+	s := &Server{
 		addr:     cfg.Addr,
 		commands: cmds,
 		lnFD:     -1,
 		pending:  make(map[int][]byte),
-	}, nil
+		log:      logger.Default(),
+	}
+	for _, opt := range opts {
+		opt(s)
+	}
+	if s.log != nil {
+		cmds.SetLogger(s.log)
+	}
+	return s, nil
 }
 
 // Start starts the server
@@ -70,24 +97,34 @@ func (s *Server) Start() error {
 		s.closeListener()
 		return fmt.Errorf("failed to create event loop: %w", err)
 	}
+	s.mu.Lock()
 	s.loop = loop
-	defer s.loop.Close()
+	s.mu.Unlock()
+	defer func() {
+		s.mu.Lock()
+		s.loop = nil
+		s.mu.Unlock()
+		_ = loop.Close()
+	}()
 	defer s.closeListener()
 
-	if err := s.loop.Register(s.lnFD, eventloop.Readable); err != nil {
+	if err := loop.Register(s.lnFD, eventloop.Readable); err != nil {
 		s.closeListener()
 		return fmt.Errorf("failed to register listener: %w", err)
 	}
 
-	logger.Info("Listening on %s", s.addr)
-	return s.loop.Run()
+	s.logger().Info("Listening on %s", s.addr)
+	return loop.Run()
 }
 
 // Shutdown asks the loop to stop. Safe to call from another goroutine.
 // Start returns after the current poll timeout once Stop is noticed.
 func (s *Server) Shutdown() {
-	if s.loop != nil {
-		s.loop.Stop()
+	s.mu.Lock()
+	loop := s.loop
+	s.mu.Unlock()
+	if loop != nil {
+		loop.Stop()
 	}
 }
 
@@ -95,18 +132,23 @@ func (s *Server) Shutdown() {
 // Prefer: signal → Shutdown(); wait for Start to return; then Close().
 func (s *Server) Close() error {
 	s.Shutdown()
-	if s.commands != nil {
-		err := s.commands.Close()
-		s.commands = nil
-		return err
+	s.mu.Lock()
+	cmds := s.commands
+	s.commands = nil
+	s.mu.Unlock()
+	if cmds != nil {
+		return cmds.Close()
 	}
 	return nil
 }
 
 func (s *Server) closeListener() {
+	s.mu.Lock()
+	loop := s.loop
+	s.mu.Unlock()
 	if s.lnFD >= 0 {
-		if s.loop != nil {
-			_ = s.loop.Deregister(s.lnFD)
+		if loop != nil {
+			_ = loop.Deregister(s.lnFD)
 		}
 		_ = unix.Close(s.lnFD)
 		s.lnFD = -1
@@ -148,16 +190,28 @@ func (s *Server) accept() error {
 			return fmt.Errorf("accept: %w", err)
 		}
 
-		if err := s.loop.Register(nfd, eventloop.Readable); err != nil {
-			unix.Close(nfd)
-			logger.Error("Failed to register client: %v", err)
+		s.mu.Lock()
+		loop := s.loop
+		s.mu.Unlock()
+		if loop == nil {
+			_ = unix.Close(nfd)
+			return nil
+		}
+		if err := loop.Register(nfd, eventloop.Readable); err != nil {
+			_ = unix.Close(nfd)
+			s.logger().Error("Failed to register client: %v", err)
 			continue
 		}
 		s.pending[nfd] = nil
-		if m := s.commands.Metrics(); m != nil {
-			m.ClientConnected()
+		s.mu.Lock()
+		cmds := s.commands
+		s.mu.Unlock()
+		if cmds != nil {
+			if m := cmds.Metrics(); m != nil {
+				m.ClientConnected()
+			}
 		}
-		logger.Info("New connection established on fd %d", nfd)
+		s.logger().Info("New connection established on fd %d", nfd)
 	}
 }
 
@@ -177,6 +231,12 @@ func (s *Server) readClient(fd int) {
 
 // drainCSP decodes and executes every complete CSP value in the pending buffer.
 func (s *Server) drainCSP(fd int) {
+	s.mu.Lock()
+	cmds := s.commands
+	s.mu.Unlock()
+	if cmds == nil {
+		return
+	}
 	for {
 		cur := s.pending[fd]
 		v, rest, ok, err := proto.Decode(cur)
@@ -196,7 +256,7 @@ func (s *Server) drainCSP(fd int) {
 		if argErr != nil {
 			reply = proto.ErrorMsg("ERR protocol error")
 		} else {
-			reply = s.commands.Exec(args)
+			reply = cmds.Exec(args)
 		}
 		_, _ = unix.Write(fd, proto.EncodeValue(reply))
 	}
@@ -204,14 +264,24 @@ func (s *Server) drainCSP(fd int) {
 
 func (s *Server) closeConn(fd int) {
 	if _, ok := s.pending[fd]; ok {
-		if m := s.commands.Metrics(); m != nil {
-			m.ClientDisconnected()
+		s.mu.Lock()
+		cmds := s.commands
+		loop := s.loop
+		s.mu.Unlock()
+		if cmds != nil {
+			if m := cmds.Metrics(); m != nil {
+				m.ClientDisconnected()
+			}
 		}
+		delete(s.pending, fd)
+		if loop != nil {
+			_ = loop.Deregister(fd)
+		}
+		_ = unix.Close(fd)
+		s.logger().Info("Closed connection on fd %d", fd)
+		return
 	}
 	delete(s.pending, fd)
-	_ = s.loop.Deregister(fd)
-	_ = unix.Close(fd)
-	logger.Info("Closed connection on fd %d", fd)
 }
 
 func listenerFD(l net.Listener) (int, error) {

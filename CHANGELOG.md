@@ -16,6 +16,8 @@ Format inspired by [Keep a Changelog](https://keepachangelog.com/).
 - `internal/info` metrics + `INFO` command; `cmd/bench` prints p50/p99 latency.
 - `cmd/server` env config (`CINDER_ADDR`, `CINDER_WAL_PATH`, `CINDER_FSYNC`,
   `CINDER_LOG_LEVEL`) and graceful shutdown without `os.Exit` in the signal handler.
+- Injectable logger (`Default` / `Discard` / `WithLogger`); Makefile gates
+  `test`, `race`, `run`, `smoke`, `bench`.
 - One-dict keyspace with lazy TTL (`internal/store`): `entry{value,expire}`;
   EXPIRE / TTL / PERSIST on the command table. TTL is memory-only this sitting.
 - Cinder curriculum tracker and labeled issues; `TODO.md` on `main`.
@@ -51,6 +53,7 @@ Format inspired by [Keep a Changelog](https://keepachangelog.com/).
 - **INFO / bench (#32):** process counters + CSP `INFO`; load gen reports p50/p99.
 - **cmd/server (#33):** env-based addr/WAL/fsync/log level; SIGINT → Shutdown,
   then Close WAL (no `os.Exit` in the signal goroutine).
+- **logger / Makefile (#34):** injectable/silenceable logger; `make test|race|run|smoke|bench`.
 - **Map + WAL, one Store:** WAL is durability/replay; the dict is the live
   keyspace. `OpenMemory` skips the WAL for tests. Package is `store`.
 - **Lazy-only TTL:** expired keys are removed on access; they may linger until
