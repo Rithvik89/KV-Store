@@ -78,6 +78,8 @@ enough to learn deadlines; linger is documented.
 - Fsync policies: `always` (default), `everysec`, `no` via `wal.WithFsync`.
 - Still **one file**. Torn-tail / kill-9 = #30. Compaction = live rewrite + rename (#31);
   multi-segment directories still deferred.
+- Incomplete trailing record stops replay without error; CRC mismatch at EOF
+  is treated as torn. Mid-file CRC mismatch is `ErrCorrupt`.
 
 ## WAL recovery: truncate torn tail on open
 
