@@ -1,9 +1,7 @@
 package wal
 
 import (
-	"encoding/binary"
 	"fmt"
-	"hash/crc32"
 	"io"
 	"os"
 	"time"
@@ -27,6 +25,8 @@ func WithFsync(p FsyncPolicy) Option {
 }
 
 // NewFileWAL opens or creates a file-based WAL at path.
+// Existing files are repaired: a torn trailing record is truncated before
+// appends are accepted, so later writes are not hidden behind garbage.
 func NewFileWAL(filepath string, opts ...Option) (*FileWAL, error) {
 	if filepath == "" {
 		filepath = "wal.log"
@@ -62,18 +62,9 @@ func NewFileWAL(filepath string, opts ...Option) (*FileWAL, error) {
 			return nil, err
 		}
 	} else {
-		hdr := make([]byte, headerSize)
-		if _, err := io.ReadFull(file, hdr); err != nil {
-			file.Close()
-			return nil, fmt.Errorf("failed to read WAL header: %w", err)
-		}
-		if err := checkHeader(hdr); err != nil {
+		if err := repairTornTail(file); err != nil {
 			file.Close()
 			return nil, err
-		}
-		if _, err := file.Seek(0, io.SeekEnd); err != nil {
-			file.Close()
-			return nil, fmt.Errorf("failed to seek WAL: %w", err)
 		}
 	}
 
@@ -126,71 +117,28 @@ func (w *FileWAL) WriteDelete(key string) error {
 
 // Replay walks well-formed records from the start of the file.
 // An incomplete trailing record stops replay without error (torn tail).
+// After NewFileWAL repair, the file should not contain a torn suffix.
 func (w *FileWAL) Replay(callback func(*Entry) error) error {
 	if w.closed {
 		return ErrWALClosed
 	}
 
-	f, err := os.Open(w.filepath)
+	info, err := os.Stat(w.filepath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil
 		}
+		return fmt.Errorf("failed to stat WAL for replay: %w", err)
+	}
+
+	f, err := os.Open(w.filepath)
+	if err != nil {
 		return fmt.Errorf("failed to open WAL for replay: %w", err)
 	}
 	defer f.Close()
 
-	hdr := make([]byte, headerSize)
-	if _, err := io.ReadFull(f, hdr); err != nil {
-		if err == io.EOF || err == io.ErrUnexpectedEOF {
-			return nil // empty / header-only incomplete — nothing to replay
-		}
-		return fmt.Errorf("failed to read WAL header: %w", err)
-	}
-	if err := checkHeader(hdr); err != nil {
-		return err
-	}
-
-	lenBuf := make([]byte, 4)
-	for {
-		if _, err := io.ReadFull(f, lenBuf); err != nil {
-			if err == io.EOF || err == io.ErrUnexpectedEOF {
-				return nil // clean EOF or torn length prefix
-			}
-			return fmt.Errorf("failed to read record length: %w", err)
-		}
-		payloadLen := binary.BigEndian.Uint32(lenBuf)
-		// Cap absurd lengths to avoid huge allocs from corruption mid-file.
-		if payloadLen > 64<<20 {
-			return fmt.Errorf("%w: payload too large", ErrCorrupt)
-		}
-		payload := make([]byte, payloadLen)
-		if _, err := io.ReadFull(f, payload); err != nil {
-			if err == io.EOF || err == io.ErrUnexpectedEOF {
-				return nil // torn payload
-			}
-			return fmt.Errorf("failed to read payload: %w", err)
-		}
-		crcBuf := make([]byte, 4)
-		if _, err := io.ReadFull(f, crcBuf); err != nil {
-			if err == io.EOF || err == io.ErrUnexpectedEOF {
-				return nil // torn crc
-			}
-			return fmt.Errorf("failed to read crc: %w", err)
-		}
-		want := binary.BigEndian.Uint32(crcBuf)
-		got := crc32.ChecksumIEEE(payload)
-		if want != got {
-			return fmt.Errorf("%w: crc mismatch", ErrCorrupt)
-		}
-		entry, err := decodePayload(payload)
-		if err != nil {
-			return err
-		}
-		if err := callback(entry); err != nil {
-			return fmt.Errorf("replay callback failed: %w", err)
-		}
-	}
+	_, err = walkRecords(f, info.Size(), callback)
+	return err
 }
 
 // Close syncs (per policy / always on close) and closes the file.

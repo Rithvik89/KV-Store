@@ -1,4 +1,4 @@
-package storage
+package store
 
 import "errors"
 
@@ -7,10 +7,10 @@ var (
 	ErrKeyExists   = errors.New("key already exists")
 )
 
-// Storage is the keyspace API implemented by Store.
+// IStore is the keyspace API implemented by Store.
 //
 // Expire / TTL / Persist are in-memory only (not WAL'd yet).
-type Storage interface {
+type IStore interface {
 	Get(key string) (string, error)
 	Set(key string, value string) error
 	Delete(key string) error

@@ -9,7 +9,9 @@ Format inspired by [Keep a Changelog](https://keepachangelog.com/).
 
 - Checksummed WAL records (`CNDR` header, length-prefixed payload, CRC32) with
   fsync policies `always` / `everysec` / `no` (`wal.WithFsync`).
-- One-dict keyspace with lazy TTL (`internal/storage`): `entry{value,expire}`;
+- WAL recovery (#30): truncate torn tails on open so later appends are not
+  hidden; fsync'd ACK survives unclean reopen (tested).
+- One-dict keyspace with lazy TTL (`internal/store`): `entry{value,expire}`;
   EXPIRE / TTL / PERSIST on the command table. TTL is memory-only this sitting.
 - Cinder curriculum tracker and labeled issues; `TODO.md` on `main`.
 - Event loop refactor (branch `cinder/21-eventloop`): `Poller` + `Loop` with
@@ -18,14 +20,16 @@ Format inspired by [Keep a Changelog](https://keepachangelog.com/).
 - CSP (`internal/proto`): RESP-shaped encode/decode with incremental framing;
   server speaks CSP; command layer returns `proto.Value`.
 - Command dispatch table (`internal/command`): verb → handler registry; arity
-  checked in one place; `NewWithStorage` for tests.
+  checked in one place; `NewWithStore` for tests.
 - Renamed package `executor` → `command`.
 - CSP CLI (`cmd/cli`): no cobra; `cinder>` REPL; default port 9573; `-raw`.
 
 ### Changed
 
-- Collapsed `MemoryStorage` / `PersistentStorage` into `storage.Store`
+- Collapsed `MemoryStorage` / `PersistentStorage` into `store.Store`
   (`Open` / `OpenMemory`); WAL is optional on the same type.
+- Renamed package `internal/storage` → `internal/store`; interface file
+  `istore.go` (`IStore`); `NewWithStorage` → `NewWithStore`.
 - Accept / read / write moved out of `eventloop` into `server` (naive
   read→process→write path).
 - Server live path no longer uses `strings.Fields` line protocol.
@@ -37,11 +41,12 @@ Format inspired by [Keep a Changelog](https://keepachangelog.com/).
   out-buffer / write-interest arming is needed. See [docs/DESIGN.md](docs/DESIGN.md).
 - **#22 server I/O polish:** backlog — functional structure first.
 - **Map + WAL, one Store:** WAL is durability/replay; the dict is the live
-  keyspace. `OpenMemory` skips the WAL for tests.
+  keyspace. `OpenMemory` skips the WAL for tests. Package is `store`.
 - **Lazy-only TTL:** expired keys are removed on access; they may linger until
   then. Sampling deferred.
 - **WAL framing (#29):** one file, checksummed records, explicit fsync policy;
   multi-segment compaction later (#31).
+- **WAL recovery (#30):** repair torn tail on open; mid-file CRC still errors.
 
 ## [0.1.0] — prior
 

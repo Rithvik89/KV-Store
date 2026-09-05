@@ -15,7 +15,7 @@ internal/eventloop/         poller + loop only
 internal/server/            listener, conns, read / frame / flush
 internal/proto/             CSP
 internal/command/           dispatch table, handlers
-internal/storage/           dict, TTL, sampling
+internal/store/              dict, TTL, sampling (IStore + Store)
 internal/pubsub/            channels, subscribe mode
 internal/stream/            log, XREAD, groups
 internal/wal/               segments, fsync, replay, compact
@@ -24,7 +24,7 @@ internal/info/              INFO counters
 Makefile  go.mod  scripts/  tests beside each package
 ```
 
-`server` owns sockets. `eventloop` only reports readiness. `command` never sees an fd. `storage` never sees a socket.
+`server` owns sockets. `eventloop` only reports readiness. `command` never sees an fd. `store` never sees a socket.
 
 Out of scope here (other majors / later): cluster, sharding, replication, auth, lists/sets/hashes, LSM.
 
@@ -35,7 +35,7 @@ Out of scope here (other majors / later): cluster, sharding, replication, auth, 
 | 1 | Event loop | #21 #22 | `eventloop/`, `server/` I/O |
 | 2 | CSP | #23 | `proto/` |
 | 3 | Commands | #24 #25 | `command/` + CLI |
-| 4 | Keyspace / TTL | #26 | `storage/` |
+| 4 | Keyspace / TTL | #26 | `store/` |
 | 5 | Pub/Sub | #27 | `pubsub/` + conn mode |
 | 6 | Streams | #28 | `stream/` |
 | 7 | AOF | #29 | `wal/` write path |
@@ -68,17 +68,16 @@ Existing packages. Rewrite the body; keep the name.
   - Arity / type errors as CSP error replies
   - PING, ECHO, GET, SET, DEL first; later sittings only register more verbs
   - Connection mode deferred to #27
-- [x] [#26](https://github.com/Rithvik89/memkv/issues/26) **Storage** — `internal/storage`
+- [x] [#26](https://github.com/Rithvik89/memkv/issues/26) **Storage** — `internal/store`
   - One `Store` (dict + optional WAL). Lazy expire; EXPIRE / TTL / PERSIST
   - TTL not in WAL yet; values still `string`
 - [x] [#29](https://github.com/Rithvik89/memkv/issues/29) **WAL write path** — `internal/wal`
   - Keep `Write` / `Replay` / `Close` / `Truncate` as the seam
   - Checksummed framed records; fsync `always` / `everysec` / `no`
   - One file (multi-segment = #31)
-- [ ] [#30](https://github.com/Rithvik89/memkv/issues/30) **WAL recovery** — `internal/wal`
-  - Replay on boot
-  - Detect a torn record at the tail and stop there
-  - Acknowledged write survives a hard kill
+- [x] [#30](https://github.com/Rithvik89/memkv/issues/30) **WAL recovery** — `internal/wal`
+  - Truncate torn tail on open; append-after-tear recovers
+  - Fsync'd write survives unclean reopen; mid-file CRC → error
 - [ ] [#31](https://github.com/Rithvik89/memkv/issues/31) **WAL compaction** — `internal/wal`
   - New segment of live keys, then atomic swap
   - Not `Truncate(0)` on the same fd
