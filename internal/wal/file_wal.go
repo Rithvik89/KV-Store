@@ -2,10 +2,15 @@ package wal
 
 import (
 	"fmt"
-	"io"
 	"os"
 	"time"
 )
+
+const compactTmpSuffix = ".compact.tmp"
+
+func compactTmpPath(walPath string) string {
+	return walPath + compactTmpSuffix
+}
 
 // FileWAL is a single-file WAL with checksummed framed records.
 type FileWAL struct {
@@ -39,6 +44,9 @@ func NewFileWAL(filepath string, opts ...Option) (*FileWAL, error) {
 	for _, opt := range opts {
 		opt(w)
 	}
+
+	// Leftover from a crash mid-compact (before rename) — safe to drop.
+	_ = os.Remove(compactTmpPath(filepath))
 
 	file, err := os.OpenFile(filepath, os.O_RDWR|os.O_CREATE, 0644)
 	if err != nil {
@@ -141,6 +149,99 @@ func (w *FileWAL) Replay(callback func(*Entry) error) error {
 	return err
 }
 
+// Rewrite replaces the WAL contents with live SET entries via temp file + rename.
+func (w *FileWAL) Rewrite(entries []Entry) error {
+	if w.closed {
+		return ErrWALClosed
+	}
+	if w.file == nil {
+		return ErrWALClosed
+	}
+
+	for i := range entries {
+		if entries[i].Op != OpSet {
+			return fmt.Errorf("%w: Rewrite only accepts SET entries, got %q", ErrInvalidEntry, entries[i].Op)
+		}
+	}
+
+	tmp := compactTmpPath(w.filepath)
+	_ = os.Remove(tmp)
+
+	tf, err := os.OpenFile(tmp, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0644)
+	if err != nil {
+		return fmt.Errorf("failed to create compact temp: %w", err)
+	}
+
+	writeTmp := func() error {
+		if _, err := tf.Write(encodeHeader()); err != nil {
+			return fmt.Errorf("failed to write compact header: %w", err)
+		}
+		for i := range entries {
+			rec, err := encodeRecord(&entries[i])
+			if err != nil {
+				return err
+			}
+			if _, err := tf.Write(rec); err != nil {
+				return fmt.Errorf("failed to write compact record: %w", err)
+			}
+		}
+		if err := tf.Sync(); err != nil {
+			return fmt.Errorf("failed to sync compact temp: %w", err)
+		}
+		return nil
+	}
+
+	if err := writeTmp(); err != nil {
+		_ = tf.Close()
+		_ = os.Remove(tmp)
+		return err
+	}
+	if err := tf.Close(); err != nil {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("failed to close compact temp: %w", err)
+	}
+
+	// Release the old inode so rename can replace the path.
+	if err := w.file.Sync(); err != nil {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("failed to sync WAL before compact rename: %w", err)
+	}
+	if err := w.file.Close(); err != nil {
+		w.file = nil
+		_ = os.Remove(tmp)
+		return fmt.Errorf("failed to close WAL before compact rename: %w", err)
+	}
+	w.file = nil
+
+	if err := os.Rename(tmp, w.filepath); err != nil {
+		_ = os.Remove(tmp)
+		if reopenErr := w.reopenAppend(); reopenErr != nil {
+			return fmt.Errorf("compact rename failed: %v (reopen: %w)", err, reopenErr)
+		}
+		return fmt.Errorf("failed to rename compact temp into place: %w", err)
+	}
+
+	if err := w.reopenAppend(); err != nil {
+		return fmt.Errorf("failed to reopen WAL after compact: %w", err)
+	}
+	return nil
+}
+
+func (w *FileWAL) reopenAppend() error {
+	file, err := os.OpenFile(w.filepath, os.O_RDWR|os.O_CREATE, 0644)
+	if err != nil {
+		return err
+	}
+	if _, err := file.Seek(0, 2); err != nil { // SeekEnd
+		_ = file.Close()
+		return err
+	}
+	w.file = file
+	w.closed = false
+	w.lastSync = time.Now()
+	return nil
+}
+
 // Close syncs (per policy / always on close) and closes the file.
 func (w *FileWAL) Close() error {
 	if w.closed {
@@ -160,23 +261,6 @@ func (w *FileWAL) Close() error {
 		w.file = nil
 	}
 	return nil
-}
-
-// Truncate clears the WAL (compaction stub until #31).
-func (w *FileWAL) Truncate() error {
-	if w.closed {
-		return ErrWALClosed
-	}
-	if err := w.file.Truncate(0); err != nil {
-		return fmt.Errorf("failed to truncate WAL: %w", err)
-	}
-	if _, err := w.file.Seek(0, io.SeekStart); err != nil {
-		return fmt.Errorf("failed to seek WAL: %w", err)
-	}
-	if _, err := w.file.Write(encodeHeader()); err != nil {
-		return fmt.Errorf("failed to rewrite WAL header: %w", err)
-	}
-	return w.maybeSync(true)
 }
 
 // Size returns the current size of the WAL file in bytes.

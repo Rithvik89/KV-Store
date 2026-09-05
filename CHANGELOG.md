@@ -11,6 +11,8 @@ Format inspired by [Keep a Changelog](https://keepachangelog.com/).
   fsync policies `always` / `everysec` / `no` (`wal.WithFsync`).
 - WAL recovery (#30): truncate torn tails on open so later appends are not
   hidden; fsync'd ACK survives unclean reopen (tested).
+- WAL compaction (#31): `Rewrite` live SETs via temp file + atomic rename;
+  `Store.Compact` snapshots the dict (maintenance path, not a CSP command).
 - One-dict keyspace with lazy TTL (`internal/store`): `entry{value,expire}`;
   EXPIRE / TTL / PERSIST on the command table. TTL is memory-only this sitting.
 - Cinder curriculum tracker and labeled issues; `TODO.md` on `main`.
@@ -30,6 +32,7 @@ Format inspired by [Keep a Changelog](https://keepachangelog.com/).
   (`Open` / `OpenMemory`); WAL is optional on the same type.
 - Renamed package `internal/storage` → `internal/store`; interface file
   `istore.go` (`IStore`); `NewWithStorage` → `NewWithStore`.
+- WAL `Truncate(0)` compaction stub replaced by `Rewrite` + rename.
 - Accept / read / write moved out of `eventloop` into `server` (naive
   read→process→write path).
 - Server live path no longer uses `strings.Fields` line protocol.
@@ -47,6 +50,8 @@ Format inspired by [Keep a Changelog](https://keepachangelog.com/).
 - **WAL framing (#29):** one file, checksummed records, explicit fsync policy;
   multi-segment compaction later (#31).
 - **WAL recovery (#30):** repair torn tail on open; mid-file CRC still errors.
+- **WAL compact (#31):** single-file live-key rewrite + atomic rename; no
+  multi-segment yet; Compact is sync/admin only.
 
 ## [0.1.0] — prior
 

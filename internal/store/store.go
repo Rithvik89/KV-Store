@@ -219,10 +219,24 @@ func (s *Store) Persist(key string) int {
 	return 1
 }
 
-// Compact truncates the WAL (stub until #31).
+// Compact rewrites the WAL to contain only live keys (maintenance path).
+// Skips expired entries. Not wired to a CSP command — can stall if called
+// on the request path with a large keyspace.
 func (s *Store) Compact() error {
 	if s.wal == nil {
 		return nil
 	}
-	return s.wal.Truncate()
+	entries := make([]wal.Entry, 0, len(s.data))
+	for k := range s.data {
+		s.expireIfNeeded(k)
+		e, ok := s.data[k]
+		if !ok {
+			continue
+		}
+		entries = append(entries, wal.Entry{Op: wal.OpSet, Key: k, Value: e.value})
+	}
+	if err := s.wal.Rewrite(entries); err != nil {
+		return fmt.Errorf("WAL compact failed: %w", err)
+	}
+	return nil
 }

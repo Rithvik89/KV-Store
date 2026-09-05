@@ -76,9 +76,8 @@ enough to learn deadlines; linger is documented.
 - Replace text-line WAL with framed records: `CNDR`+version header;
   `len | payload | crc32`. Payload is length-prefixed key/value (binary-safe).
 - Fsync policies: `always` (default), `everysec`, `no` via `wal.WithFsync`.
-- Still **one file**. Multi-segment + compaction = #31. Torn-tail / kill-9 = #30.
-- Incomplete trailing record stops replay without error; CRC mismatch at EOF
-  is treated as torn. Mid-file CRC mismatch is `ErrCorrupt`.
+- Still **one file**. Torn-tail / kill-9 = #30. Compaction = live rewrite + rename (#31);
+  multi-segment directories still deferred.
 
 ## WAL recovery: truncate torn tail on open
 
@@ -90,3 +89,17 @@ enough to learn deadlines; linger is documented.
 On `NewFileWAL`, scan for the last good record offset and **truncate** any
 torn suffix before SeekEnd. Otherwise appends land past garbage and Replay
 never sees them. Fsync'd writes are proven to survive unclean reopen in tests.
+
+## WAL compaction: rewrite live keys + atomic rename
+
+**Date:** 2026-09-05  
+**Status:** Accepted (#31)
+
+### Decision
+
+- `WAL.Rewrite(entries)` writes live SET records to `*.compact.tmp`, fsyncs,
+  closes the old fd, `Rename`s onto the WAL path, reopens for append.
+- `Store.Compact` snapshots the in-memory dict (skipping expired) and calls
+  Rewrite. Not a CSP command; sync on the caller — keep off the hot path.
+- Leftover `.compact.tmp` from a crash before rename is deleted on open.
+- Multi-segment directories deferred; this is the one-file stand-in for “atomic swap”.
