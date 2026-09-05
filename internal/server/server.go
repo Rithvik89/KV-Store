@@ -8,6 +8,7 @@ import (
 	"memkv/internal/eventloop"
 	"memkv/internal/logger"
 	"memkv/internal/proto"
+	"memkv/internal/wal"
 
 	"golang.org/x/sys/unix"
 )
@@ -23,7 +24,7 @@ import (
 // incomplete values across reads — enough for incremental Decode, not the
 // fuller conn model parked in #22.
 type Server struct {
-	port     int
+	addr     string
 	commands *command.Executor
 	loop     *eventloop.Loop
 	lnFD     int
@@ -31,21 +32,18 @@ type Server struct {
 	pending  map[int][]byte // incomplete CSP bytes per client fd
 }
 
-// Config holds server configuration
-type Config struct {
-	Port    int
-	WALPath string
-}
-
 // New creates a new server instance
 func New(cfg Config) (*Server, error) {
-	cmds, err := command.New(cfg.WALPath)
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
+	cmds, err := command.New(cfg.WALPath, wal.WithFsync(cfg.Fsync))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create command registry: %w", err)
 	}
 
 	return &Server{
-		port:     cfg.Port,
+		addr:     cfg.Addr,
 		commands: cmds,
 		lnFD:     -1,
 		pending:  make(map[int][]byte),
@@ -54,7 +52,7 @@ func New(cfg Config) (*Server, error) {
 
 // Start starts the server
 func (s *Server) Start() error {
-	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", s.port))
+	listener, err := net.Listen("tcp", s.addr)
 	if err != nil {
 		return fmt.Errorf("failed to start listener: %w", err)
 	}
@@ -81,17 +79,26 @@ func (s *Server) Start() error {
 		return fmt.Errorf("failed to register listener: %w", err)
 	}
 
-	logger.Info("Listening on port %d", s.port)
+	logger.Info("Listening on %s", s.addr)
 	return s.loop.Run()
 }
 
-// Close asks the loop to stop. Run returns within one poll timeout.
-func (s *Server) Close() error {
+// Shutdown asks the loop to stop. Safe to call from another goroutine.
+// Start returns after the current poll timeout once Stop is noticed.
+func (s *Server) Shutdown() {
 	if s.loop != nil {
 		s.loop.Stop()
 	}
+}
+
+// Close stops the loop (if still running) and closes the store/WAL.
+// Prefer: signal → Shutdown(); wait for Start to return; then Close().
+func (s *Server) Close() error {
+	s.Shutdown()
 	if s.commands != nil {
-		return s.commands.Close()
+		err := s.commands.Close()
+		s.commands = nil
+		return err
 	}
 	return nil
 }
